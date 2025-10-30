@@ -1,273 +1,1533 @@
 openapi: 3.0.0
-servers:
-  - url: "http://localhost:3000"
 info:
-  title: Fantastic Coffee (decaffeinated)
-  description: Fantastic Coffee (decaffeinated), the skeleton project for Web and Software architecture course
+  title: 'WASAText API'
+  description: 'API for managing a messaging platform'
   version: 1.0.0
-paths:
-  /status:
-    parameters:
-      - $ref: "#/components/parameters/XAppBuild"
-      - $ref: "#/components/parameters/XAppVersion"
-      - $ref: "#/components/parameters/XAppLanguage"
-      - $ref: "#/components/parameters/XAppPlatform"
-    get:
-      tags: ["General"]
-      operationId: getStatusMessage
-      summary: Get status message for the user about issues / updates
-      description: |-
-        The response contains a status message meant for the user. It might
-        contains information about current technical issues, update messages
-        or general information.
-      responses:
-        "200":
-          description: Status message available
+
+servers:                                              # base URL where the API is
+  - url: 'http://localhost:3000/v1'
+    description: 'Local Development Environment (Docker/Go)'
+  - url: 'https://api.wasatext.com/v1'
+    description: 'Production Server'
+
+security:                                             # global security
+  - BearerAuth: []
+
+components:                                           # reusable components
+  schemas:                                            # structures
+    Error:
+      description: 'Standard error'
+      type: object
+      properties:
+        code:
+          description: 'Integer code error'
+          type: integer
+          format: int32
+          minimum: 100
+          maximum: 599
+          readOnly: true
+        message:
+          description: 'Error text message'
+          type: string
+          pattern: '^.{0,500}$'                       # 0-500 chars
+          minLength: 0
+          maxLength: 500
+          readOnly: true
+      required: [code, message]
+      additionalProperties: false                     # no other properties allowed
+      example:
+        code: 404
+        message: 'The requested resource could not be found'
+
+    Id:
+      description: 'Standard unique identifier'
+      type: string
+      format: uuid                                    # Universally Unique Identifier
+      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+      minLength: 36
+      maxLength: 36
+      readOnly: true
+      example: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
+
+    Username:
+      description: 'Standard username, without white spaces'
+      type: string
+      pattern: '^[a-zA-Z0-9_.-]+$'                    # alphanumeric
+      minLength: 1
+      maxLength: 30
+      example: 'MercuriLorenzo'
+    
+    Photo:
+      description: 'Binary photo file'
+      type: string
+      format: binary
+      pattern: '^.*$'                                 # any binary content
+      minLength: 1
+      maxLength: 15728640                             # 15 Megabyte
+      example: 'mercuriLorenzo.png'
+
+    PhotoURL:
+      description: 'Photo URL'
+      type: string
+      format: url
+      pattern: '^.{0,300}$'                           # 0-300 chars
+      minLength: 0
+      maxLength: 300
+      readOnly: true
+      example: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
+    
+    User:
+      description: 'Standard user'
+      type: object
+      properties:
+        username:                                     # univocal identifier
+          allOf:
+            - $ref: '#/components/schemas/Username'
+            - readOnly: true
+        photo:
+          $ref: '#/components/schemas/PhotoURL'
+      required: [username, photo]
+      readOnly: true
+      additionalProperties: false                     # no other properties allowed
+
+    MessageBase:
+      description: 'Base structure for messages and snippets'
+      type: object
+      properties:
+        date:
+          description: 'Message creation date'
+          type: string
+          format: date-time
+          pattern: '^.{20,60}$'                          # chars as date format YYYY-MM-DDTHH:MM:SSZ + extra complex
+          minLength: 20
+          maxLength: 60
+          readOnly: true
+          example: '2025-11-04T10:32:00Z'
+        user:
+          allOf:
+            - $ref: '#/components/schemas/Username'
+            - readOnly: true
+        state:
+          description: |
+            Message state,
+            received: message received by all chat members,
+            read: message read by all chat members
+          type: string
+          pattern: '^.{4,8}$'                         # 4-8 chars as 'read' or 'received'
+          minLength: 4
+          maxLength: 8
+          enum: [received, read]
+          readOnly: true
+          example: 'read'
+          # EXTRA: sent: message sent by the user but not received yet by all chat members
+      required: [date, user, state]
+
+    MessageId:
+      allOf:
+        - $ref: '#/components/schemas/Id'
+      
+    MessageText:
+      description: 'Standard message text content'
+      type: string
+      pattern: '^.{0,10000}$'                         # 0-10000 chars
+      minLength: 0
+      maxLength: 10000
+      example: 'Hello world!'
+
+    Message:
+      description: 'Standard message'
+      allOf:                                          # combines MessageBase with the modifications below
+        - $ref: '#/components/schemas/MessageBase'    # inherit everything from MessageBase
+        - type: object                                # override type to object
+          properties:
+            id:
+              $ref: '#/components/schemas/MessageId'
+            content:
+              description: 'Content of the message, text and/or photo'
+              type: object
+              properties:
+                text:
+                  $ref: '#/components/schemas/MessageText'
+                photo:
+                  $ref: '#/components/schemas/PhotoURL'
+              minProperties: 1                        # at least one of text/photo is present
+          required: [id, content]                     # + date, user, state already required in MessageBase
+
+    SnippetId:
+      allOf:
+        - $ref: '#/components/schemas/Id'
+
+    Emoji:
+      description: 'The emoji character'
+      type: string
+      pattern: '^.{1,8}$'                         # emoji can be more than 1 char
+      minLength: 1
+      maxLength: 8
+      example: '👍'
+
+    Snippet:
+      description: 'Standard snippet of a message'
+      allOf:                                          # combines MessageBase with the modifications below
+        - $ref: '#/components/schemas/MessageBase'    # inherit everything from MessageBase
+        - type: object                                # override type to object
+          properties:
+            id:
+              $ref: '#/components/schemas/SnippetId'
+            content:
+              description: |
+                Summary of the content of a message,
+                text summary or emoji representing the media
+              type: object
+              properties:
+                text:
+                  allOf:
+                    - $ref: '#/components/schemas/MessageText'
+                    - maxLength: 50                   # example: first 50 chars of the message
+                emoji:
+                  $ref: '#/components/schemas/Emoji'
+              minProperties: 1                        # at least one of text/emoji is present
+          required: [id, content]                     # + date, user, state already required in MessageBase
+
+    CommentId:
+      allOf:
+        - $ref: '#/components/schemas/Id'
+
+    Comment:
+      description: 'Standard comment to a message'
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/CommentId'
+        emoji:
+          $ref: '#/components/schemas/Emoji'
+        user:
+          allOf:
+            - $ref: '#/components/schemas/Username'
+            - readOnly: true
+      required: [id, emoji, user]
+      additionalProperties: false                     # no other properties allowed
+
+    ChatId:
+      allOf:
+        - $ref: '#/components/schemas/Id'
+    
+    ChatSummary:                                      # generic chat summary schema
+      description: 'Standard chat summary, without full messages list, private chat or group chat'
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/ChatId'
+        members:
+          description: 'Members of the chat'
+          type: array
+          items:
+            $ref: '#/components/schemas/Username'
+          minItems: 2                                 # in the creation at least 2 members for both groups and private chats
+          maxItems: 100
+          uniqueItems: true                           # ensure that each member could be once in the members list
+        snippet:
+          allOf:
+            - $ref: '#/components/schemas/Snippet'
+            - readOnly: true
+      required: [id, members]
+
+    GroupName:
+      description: 'Standard group name'
+      type: string
+      pattern: '^.{1,100}$'                           # 1-100 chars
+      minLength: 1
+      maxLength: 100
+      example: 'Study Group'
+
+    GroupSummary:
+      description: 'Standard group chat summary, without full messages list'
+      allOf:                                          # combines ChatSummary with the modifications below
+        - $ref: '#/components/schemas/ChatSummary'    # inherit everything from ChatSummary
+        - type: object                                # override type to object
+          properties:
+            chatType:
+              description: 'Chat type'
+              type: string
+              pattern: '^.{5}$'                       # 5 chars
+              minLength: 5
+              maxLength: 5
+              enum: ['group']
+              readOnly: true
+              example: 'group'
+            name:
+              $ref: '#/components/schemas/GroupName'
+            photo:
+              $ref: '#/components/schemas/PhotoURL'
+      required: [chatType, name, photo]               # + id, members already required in ChatSummary
+
+    GroupDetail:
+      description: 'Standard group chat with full messages list'
+      allOf:                                          # combines GroupSummary with the modifications below
+        - $ref: '#/components/schemas/GroupSummary'   # inherit everything from GroupSummary
+        - type: object                                # override type to object
+          properties:
+            messages:
+              description: 'List of all messages in the group chat'
+              type: array
+              items:
+                $ref: '#/components/schemas/Message'
+              minItems: 0
+              maxItems: 100000
+          # id, members, chatType, name, photo already required in GroupSummary
+
+    PrivateChatSummary:
+      description: 'Standard private chat summary, without full messages list'
+      allOf:                                          # combines ChatSummary with the modifications below
+        - $ref: '#/components/schemas/ChatSummary'    # inherit everything from ChatSummary
+        - type: object                                # override type to object
+          properties:
+            chatType:
+              description: 'Chat type'
+              type: string
+              pattern: '^.{7}$'                       # 7 chars
+              minLength: 7
+              maxLength: 7
+              enum: ['private']
+              readOnly: true
+              example: 'private'
+            members:
+              description: 'The two members of the private chat'
+              type: array
+              items:
+                $ref: '#/components/schemas/Username'
+              minItems: 2
+              maxItems: 2
+              readOnly: true
+            name:                                     # the other user username
+              allOf:
+                - $ref: '#/components/schemas/Username'
+                - readOnly: true
+            photo:                                    # the other user photo
+              allOf:
+                - $ref: '#/components/schemas/PhotoURL'
+                - readOnly: true
+      required: [chatType, name, photo]               # + members already required in ChatSummary
+
+    PrivateChatDetail:
+      description: 'Standard private chat with full messages list'
+      allOf:                                          # combines PrivateChatSummary with the modifications below
+        - $ref: '#/components/schemas/PrivateChatSummary' # inherit everything from PrivateChatSummary
+        - type: object                                # override type to object
+          properties:
+            messages:
+              description: 'List of all messages in the private chat'
+              type: array
+              items:
+                $ref: '#/components/schemas/Message'
+              minItems: 0
+              maxItems: 100000
+      # id, members, chatType, name, photo already required in PrivateChatSummary
+
+  securitySchemes:                                    # authentication
+    BearerAuth:
+      description: 'Authentication token (JWT)'       # JSON Web Token
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ParamUsername:
+      name: username
+      description: 'User searched username'
+      in: path
+      schema:
+        $ref: '#/components/schemas/Username'
+      required: true
+
+    ParamChatId:
+      name: chatId
+      description: 'Chat unique identifier'
+      in: path
+      schema:
+        $ref: '#/components/schemas/ChatId'
+      required: true
+
+    ParamMessageId:
+      name: messageId
+      description: 'Message unique identifier'
+      in: path
+      schema:
+        $ref: '#/components/schemas/MessageId'
+      required: true
+
+    # EXTRA: add cursor based pagination
+
+  responses:
+    # success
+    #NoContent:
+    #  description: '204 No Content'
+
+    # redirection
+    #MovedPermanently:
+    #  description: '301 Moved Permanently'
+    #  headers:
+    #    Location:
+    #      description: 'Final URI of the requested resource'
+    #      schema:
+    #        type: string
+    #        format: uri
+    #      example: 'https://api.wasatext.com/messages/123'
+
+    #Found:
+    #  description: '302 Found'
+    #  headers:
+    #    Location:
+    #      description: 'Temporary URI to access the requested resource'
+    #      schema:
+    #        type: string
+    #        format: uri
+    #      example: 'https://api.wasatext.com/messages/temp/abc'
+    
+    # client errors
+    BadRequest:
+      description: '400 Bad Request'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: 400
+            message: 'The data provided is not valid. Please check constraints and required fields'
+
+    Unauthorized:
+      description: '401 Unauthorized'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: 401
+            message: 'Authentication required. Please include a valid access token'
+
+    Forbidden:
+      description: '403 Forbidden'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: 403
+            message: 'You do not have permission to access this resource'
+
+    NotFound:
+      description: '404 Not Found'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: 404
+            message: 'The requested resource was not found'
+
+    #MethodNotAllowed:
+    #  description: '405 Method Not Allowed'
+    #  content:
+    #    application/json:
+    #      schema:
+    #        $ref: '#/components/schemas/Error'
+    #      example:
+    #        code: 405
+    #        message: 'The HTTP method used is not supported for this resource'
+
+    # server errors
+    InternalServerError:
+      description: '500 Internal Server Error'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: 500
+            message: 'An internal server error occurred'
+
+    #NotImplemented:
+    #  description: '501 Not Implemented'
+    #  content:
+    #    application/json:
+    #      schema:
+    #        $ref: '#/components/schemas/Error'
+    #      example:
+    #        code: 501
+    #        message: 'The requested functionality is not yet supported'
+
+    BadGateway:
+      description: '502 Bad Gateway'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: 502
+            message: 'The server received an invalid response from an upstream service'
+
+    ServiceUnavailable:
+      description: '503 Service Unavailable'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: 503
+            message: 'The service is temporarily unavailable. Please try again later'
+
+    GatewayTimeout:
+      description: '504 Gateway Timeout'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: 504
+            message: 'The server did not receive a response from the upstream service within the time limit'
+
+
+tags:
+  - name: 'Login'
+    description: 'User authentication and registration endpoints'
+  - name: 'User'
+    description: 'User data, retrieve or update'
+  - name: 'Chat'
+    description: 'Manage chats, private chats and groups'
+  - name: 'PrivateChat'
+    description: 'Manage private chats between two users'
+  - name: 'Group'
+    description: 'Manage group chats with multiple users'
+
+
+paths:                                                # rest endpoints
+  # login endpoints
+  /session:
+    post:
+      operationId: 'doLogin'
+      description: |
+        If the username exists, the user is logged in.
+        If the username is new, the user is registered and logged in
+      summary: 'User login or registration'
+      tags: ['Login']
+      security: []                                    # exclude this endpoint from authentication
+      requestBody:
+        description: 'User username for login'
+        content:
+          application/json:
+            schema:
+              description: 'Login payload'
+              type: object
+              properties:
+                username:
+                  $ref: '#/components/schemas/Username'
+              required: [username]
+        required: true
+      responses:  
+        '200':
+          description: 'User successfully logged in'
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/StatusInfo"
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "500": { $ref: "#/components/responses/InternalServerError" }
-
-  /:
-    get:
-      tags: ["Group 1"]
-      operationId: index
-      summary: Get an index
-      description: |-
-        This is an example of an index API description
-      responses:
-        "200":
-          description: Successful
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "500": { $ref: "#/components/responses/InternalServerError" }
-  /context:
-    parameters:
-      - $ref: "#/components/parameters/XAppBuild"
-      - $ref: "#/components/parameters/XAppVersion"
-      - $ref: "#/components/parameters/XAppLanguage"
-      - $ref: "#/components/parameters/XAppPlatform"
-    post:
-      tags: ["Group 1"]
-      operationId: getContext
-      summary: Another API example
-      description: |-
-        Example description 2
-      responses:
-        "200":
-          description: Request ok
-          headers:
-            X-Access-Token:
-              description: Access token for authenticated requests
-              schema: { type: string }
-        "500": { $ref: "#/components/responses/InternalServerError" }
-  /authenticated:
-    parameters:
-      - $ref: "#/components/parameters/XAppBuild"
-      - $ref: "#/components/parameters/XAppVersion"
-      - $ref: "#/components/parameters/XAppLanguage"
-      - $ref: "#/components/parameters/XAppPlatform"
-    get:
-      tags: ["Group 2"]
-      operationId: getAuthenticatedExample
-      summary: Get an endpoint with authentication
-      description: |-
-        Get an endpoint with auth
-      security:
-        - LegacyAuth: []
-        - AppToken: []
-      responses:
-        "200":
-          description: Logout successful
-        "500": { $ref: "#/components/responses/InternalServerError" }
-
-  /pictures/{cat}:
-    parameters:
-      - $ref: "#/components/parameters/XAppBuild"
-      - $ref: "#/components/parameters/XAppVersion"
-      - $ref: "#/components/parameters/XAppLanguage"
-      - $ref: "#/components/parameters/XAppPlatform"
-      - $ref: "#/components/parameters/cat"
-    get:
-      tags: ["Cat pictures"]
-      operationId: getCatFromPicture
-      summary: Example of a parameter in URL
-      description: |-
-        Example of a parameter in URL
-      security:
-        - LegacyAuth: []
-      responses:
-        "200":
-          description: Student picture found
+                $ref: '#/components/schemas/User'
+              example:
+                username: 'MercuriLorenzo'
+                photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
+        '201':
+          description: 'User successfully registered and logged in'
           content:
-            image/png:
+            application/json:
               schema:
-                type: string
-                format: binary
-              example: Picture binary file
-        "404":
-          description: Student picture not found
-        "500": { $ref: "#/components/responses/InternalServerError" }
+                $ref: '#/components/schemas/User'
+              example:
+                username: 'MercuriLorenzo'
+                photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
 
-
-  /autofeeder/{cat}:
-    parameters:
-      - $ref: "#/components/parameters/XAppBuild"
-      - $ref: "#/components/parameters/XAppVersion"
-      - $ref: "#/components/parameters/XAppLanguage"
-      - $ref: "#/components/parameters/XAppPlatform"
-      - $ref: "#/components/parameters/cat"
-    put:
-      tags: ["Autofeeder"]
-      operationId: createCatAutofeeder
-      summary: Example of PUT operation
-      security:
-        - LegacyAuth: []
-      responses:
-        "200":
-          description: Auto feed enabled
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "500": { $ref: "#/components/responses/InternalServerError" }
-    delete:
-      tags: ["Autofeeder"]
-      operationId: deleteCatAutofeeder
-      summary: Example of DELETE operation
-      security:
-        - LegacyAuth: []
-      responses:
-        "200":
-          description: Auto feed disabled
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "500": { $ref: "#/components/responses/InternalServerError" }
-
-  /session/login:
-    parameters:
-      - $ref: "#/components/parameters/XAppBuild"
-      - $ref: "#/components/parameters/XAppVersion"
-      - $ref: "#/components/parameters/XAppLanguage"
-      - $ref: "#/components/parameters/XAppPlatform"
-    post:
-      tags: ["Session management"]
-      operationId: login
-      summary: Log-in into system
-      description: |-
-        Perform a log-in action using username and password credentials.
-        Returns a token which can be used in authenticated requests.
+  # user endpoints
+  /me/username:
+    patch:
+      operationId: 'setMyUserName'
+      description: 'Updates the username of the authenticated user'
+      summary: 'Update a user username'
+      tags: ['User']
       requestBody:
+        description: 'User new username'
         content:
-          application/x-www-form-urlencoded:
+          application/merge-patch+json:
             schema:
+              description: 'Object containing the new username'
               type: object
               properties:
-                userid:
-                  type: string
-                  pattern: '^[a-zA-Z0-9]+$'
-                  minLength: 3
-                  maxLength: 255
-                password:
-                  type: string
-                  pattern: '^.*?$'
-                  minLength: 8
-                  maxLength: 255
+                username:
+                  $ref: '#/components/schemas/Username'
+        required: true
       responses:
-        "200":
-          description: Login successful
-          headers:
-            X-Access-Token:
-              description: Access token for authenticated requests
-              schema: { type: string }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "403":
-          description: Login failed
-          headers:
-            X-Message:
-              description: Error message
-              schema: { type: string }
-        "500": { $ref: "#/components/responses/InternalServerError" }
+        '200':
+          description: 'User username updated successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+              example:
+                username: 'NewMercuriLorenzo'
+                photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
 
+  /me/photo:
+    patch:
+      operationId: 'setMyPhoto'
+      description: 'Updates the profile picture of the authenticated user via multipart upload'
+      summary: 'Update a user photo'
+      tags: ['User']
+      requestBody:
+        description: 'User new photo'
+        content:
+          multipart/form-data:
+            schema:
+              description: 'Object containing the binary file of the photo to upload'
+              type: object
+              properties:
+                photoFile:
+                  $ref: '#/components/schemas/Photo'
+              required: [photoFile]
+        required: true
+      responses:
+        '200':
+          description: 'User photo updated successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+              example:
+                username: 'MercuriLorenzo'
+                photo: 'https://api.wasatext.com/photos/newMercuriLorenzo.png'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
 
-components:
-  schemas:
-    StatusInfo:
-      title: Status Info
-      type: object
-      properties:
-        status:
-          type: string
-          enum:
-            - info
-            - warning
-            - critical
-            - ""
-        title: { type: string }
-        message: { type: string }
-        url: { type: string }
+  /users/{username}:
+    get:
+      operationId: 'getUser'
+      description: 'Retrieves profile information of a specific user by their username'
+      summary: 'Get user information by username'
+      tags: ['User']
+      parameters:
+        - $ref: '#/components/parameters/ParamUsername'
+      responses:
+        '200':
+          description: 'User information retrieved successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+              example:
+                username: 'MercuriLorenzo'
+                photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
 
-  responses:
-    Unauthorized:
-      description: The access token is missing or it's expired
-    BadRequest:
-      description: The request was not compliant with the documentation (eg. missing fields, etc)
-    InternalServerError:
-      description: The server encountered an internal error. Further info in server logs
+  # chat endpoints
+  /chats:
+    get:
+      operationId: 'getMyConversations'
+      description: 'Retrieves a list of all private chats and groups the user belongs to'
+      summary: 'Get all user chats'
+      tags: ['Chat']
+      responses:
+        '200':
+          description: 'User chats retrieved successfully'
+          content:
+            application/json:
+              schema:
+                description: 'Object containing the list of conversations'
+                type: object
+                properties:
+                  chats:
+                    description: 'List of user chats'
+                    type: array
+                    items:
+                      oneOf:                              # chats without full messages list
+                        - $ref: '#/components/schemas/GroupSummary'
+                        - $ref: '#/components/schemas/PrivateChatSummary'
+                    minItems: 0
+                    maxItems: 10000
+              example:
+                chats:
+                  - id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
+                    chatType: 'private'
+                    members: ['Alice', 'Bob']
+                    # Alice's POV
+                    name: 'Bob'
+                    photo: 'https://api.wasatext.com/photos/bob.png'
+                    snippet:
+                      id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+                      content:
+                        text: 'Hey, are you free tonight?'
+                        emoji: '📷'
+                      date: '2025-11-15T18:30:00Z'
+                      user: 'Bob'
+                      state: 'read'
+                  - id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
+                    chatType: 'group'
+                    members: ['Alice', 'Bob', 'Charlie']
+                    name: 'Weekend Trip'
+                    photo: 'https://api.wasatext.com/photos/trip.png'
+                    snippet:
+                      id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                      content:
+                        text: 'I booked the hotel!'
+                      date: '2025-11-15T19:00:00Z'
+                      user: 'Charlie'
+                      state: 'received'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+        
+  /chats/{chatId}:
+    get:
+      operationId: 'getConversation'
+      description: 'Retrieves detailed information and the message history of a specific conversation'
+      summary: 'Get user chat by chat ID'
+      tags: ['Chat']
+      parameters:
+        - $ref: '#/components/parameters/ParamChatId'
+      responses:
+        '200':
+          description: 'User chat retrieved successfully'
+          content:
+            application/json:
+              schema:
+                description: 'User chat with full messages list'
+                oneOf:
+                  - $ref: '#/components/schemas/GroupDetail'
+                  - $ref: '#/components/schemas/PrivateChatDetail'
+              example:
+                id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
+                chatType: 'private'
+                members: ['Alice', 'Bob']
+                # Alice's POV
+                name: 'Bob'
+                photo: 'https://api.wasatext.com/photos/bob.png'
+                snippet:
+                  id: '127ac10b-58cc-4372-a567-0e02b2c3d479'
+                  content:
+                    text: 'I will be there in 5 minutes.'
+                    emoji: '📷'
+                  date: '2025-11-15T18:35:00Z'
+                  user: 'Bob'
+                  state: 'received'
+                messages:
+                  - id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
+                    content:
+                      text: 'Hey Bob, are you coming?'
+                    date: '2025-11-15T18:30:00Z'
+                    user: 'Alice'
+                    state: 'read'
+                  - id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+                    content:
+                      text: 'I will be there in 5 minutes.'
+                      photo: 'https://api.wasatext.com/photos/photo.png'
+                    date: '2025-11-15T18:35:00Z'
+                    user: 'Bob'
+                    state: 'received'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
 
-  securitySchemes:
-    LegacyAuth:
-      type: apiKey
-      in: header
-      name: X-App-Token
-      description: |-
-        App session token value. This value is sent by the server in the login
-        and session refresh APIs.
+  /chats/{chatId}/messages:
+    post:
+      operationId: 'sendMessage'
+      description: 'Sends a new message to a specific chat. Supports text, photo, or both'
+      summary: 'Send a new message'
+      tags: ['Chat']
+      parameters:
+        - $ref: '#/components/parameters/ParamChatId'
+      requestBody:
+        description: 'Message payload containing text and/or a binary photo file'
+        content:
+          multipart/form-data:
+            schema:
+              description: 'Object containing the message content'
+              type: object
+              properties:
+                text:
+                  $ref: '#/components/schemas/MessageText'
+                photoFile:
+                  $ref: '#/components/schemas/Photo'
+              minProperties: 1                        # at least one of text/photo is present
+        required: true
+      responses:
+        '201':
+          description: 'Message sent successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
+                content:
+                  text: 'Hello, how are you?'
+                date: '2025-11-15T18:45:00Z'
+                user: 'MercuriLorenzo'
+                state: 'received'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
 
-  parameters:
-    XAppVersion:
-      schema:
-        type: string
-        pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$'
-        minLength: 1
-        maxLength: 10
-      name: X-App-Version
-      in: header
-      required: true
-      description: App human readable version ("semantic version" format)
-      allowEmptyValue: false
-    XAppBuild:
-      schema: { type: integer }
-      name: X-App-Build
-      in: header
-      required: true
-      description: App build number
-      allowEmptyValue: false
-    XAppLanguage:
-      schema:
-        type: string
-        pattern: '^[a-z]{2}([-_][A-Z]{2})?$'
-        minLength: 2
-        maxLength: 5
-      name: X-App-Language
-      in: header
-      required: true
-      description: App language in ISO 639-1 format
-      allowEmptyValue: false
-    XAppPlatform:
-      schema:
-        type: string
-        enum: [ios, android]
-      name: X-App-Platform
-      in: header
-      required: true
-      description: App operating system / platform
-      allowEmptyValue: false
-    cat:
-      schema:
-        type: string
-        pattern: '^[a-zA-Z]+$'
-        minLength: 3
-        maxLength: 10
-      name: cat
-      in: path
-      required: true
-      description: Cat
-      allowEmptyValue: false
+  /chats/{chatId}/messages/forwards:
+    post:
+      operationId: 'forwardMessage'
+      description: 'Forwards an existing message to the specified chat. The content (text/photo) is copied to a new message'
+      summary: 'Forwards a message'
+      tags: ['Chat']
+      parameters:
+        - $ref: '#/components/parameters/ParamChatId'
+      requestBody:
+        description: 'Payload containing the unique identifier of the message to be forwarded'
+        content:
+          application/json:
+            schema:
+              description: 'Object containing the ID of the message to forward'
+              type: object
+              properties:
+                messageId:
+                  $ref: '#/components/schemas/MessageId'
+              required: [messageId]
+        required: true
+      responses:
+        '201':
+          description: 'Message forwarded successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                id: '4fa85f64-5717-4562-b3fc-2c963f66afa7'
+                content:
+                  text: 'Hello, how are you?'
+                date: '2025-11-15T19:00:00Z'
+                user: 'MercuriLorenzo'
+                state: 'received'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+
+  /chats/{chatId}/messages/{messageId}/comments:
+    get:
+      operationId: 'getMessageComments'
+      description: 'Retrieves all comments associated with a specific message'
+      summary: 'Get message comments'
+      tags: ['Chat']
+      parameters:
+        - $ref: '#/components/parameters/ParamChatId'
+        - $ref: '#/components/parameters/ParamMessageId'
+      responses:
+        '200':
+          description: 'Message comments retrieved successfully'
+          content:
+            application/json:
+              schema:
+                description: 'Object containing the list of comments'
+                type: object
+                properties:
+                  comments:
+                    description: 'List of comments on a message'
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Comment'
+                    minItems: 0
+                    maxItems: 1000
+              example:
+                comments:
+                  - id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
+                    emoji: '👍'           
+                    user: 'MercuriLorenzo'
+                  - id: 'd63b4180-65aa-42ec-a945-5fd21dec0538'
+                    emoji: '😂'           
+                    user: 'Max'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+
+  /chats/{chatId}/messages/{messageId}/comments/comment: # current user unique comment
+    parameters:
+      - $ref: '#/components/parameters/ParamChatId'
+      - $ref: '#/components/parameters/ParamMessageId'
+
+    put:
+      operationId: 'commentMessage'
+      description: |
+        Sets or updates the user comment for a specific message. 
+        A user can have only one active comment per message.
+        If a comment already exists, this operation replaces it with the new emoji.
+      summary: 'Comment a message'
+      tags: ['Chat']
+      requestBody:
+        description: 'Payload containing the new single emoji to set as comment'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Comment'
+        required: true
+      responses:
+        '200':
+          description: 'Comment updated successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+              example:
+                id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
+                emoji: '👍'           
+                user: 'MercuriLorenzo'
+        '201':
+          description: 'Comment created successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+              example:
+                id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
+                emoji: '👍'           
+                user: 'MercuriLorenzo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+
+    delete:
+      operationId: 'uncommentMessage'
+      description: 'Deletes a specific comment on a message. Only the author of the comment can perform this action'
+      summary: 'Delete a comment on a message'
+      tags: ['Chat']
+      responses:
+        '200':
+          description: 'Comment deleted successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+              example:
+                id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
+                emoji: '👍'           
+                user: 'MercuriLorenzo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+  
+  /chats/{chatId}/messages/{messageId}:
+    delete:
+      operationId: 'deleteMessage'
+      description: 'Deletes a specific message. Only the author of the message can perform this action'
+      summary: 'Delete a message'
+      tags: ['Chat']
+      parameters:
+        - $ref: '#/components/parameters/ParamChatId'
+        - $ref: '#/components/parameters/ParamMessageId'
+      responses:
+        '200':
+          description: 'Message deleted successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
+                content:
+                  text: 'This message has been deleted.'
+                date: '2025-11-15T18:45:00.123Z'
+                user: 'MercuriLorenzo'
+                state: 'read'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+
+  # private chat endpoints
+  /private_chats:
+    post:
+      operationId: 'createPrivateChat'
+      description: 'Creates a new private conversation with another user or returns the existing one'
+      summary: 'Create a new private chat or get the existing one'
+      tags: ['PrivateChat']
+      requestBody:
+        description: 'Username of the other user to create the private chat with'
+        content:
+          application/json:
+            schema:
+              description: 'Object containing the target username'
+              type: object
+              properties:
+                username:
+                  $ref: '#/components/schemas/Username'
+              required: [username]
+        required: true
+      responses:
+        '200':
+          description: 'Private chat already exists'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateChatDetail'
+              example:
+                id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
+                chatType: 'private'
+                members: ['Alice', 'Bob']
+                # Alice's POV
+                name: 'Bob'
+                photo: 'https://api.wasatext.com/photos/bob.png'
+                snippet:
+                  id: '237ac10b-58cc-4372-a567-0e02b2c3d479'
+                  content:
+                    text: 'I will be there in 5 minutes.'
+                    emoji: '📷'
+                  date: '2025-11-15T18:35:00Z'
+                  user: 'Bob'
+                  state: 'received'
+                messages:
+                  - id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
+                    content:
+                      text: 'Hey Bob, are you coming?'
+                    date: '2025-11-15T18:30:00Z'
+                    user: 'Alice'
+                    state: 'read'
+                  - id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+                    content:
+                      text: 'I will be there in 5 minutes.'
+                      photo: 'https://api.wasatext.com/photos/photo.png'
+                    date: '2025-11-15T18:35:00Z'
+                    user: 'Bob'
+                    state: 'received'
+        '201':
+          description: 'Private chat created successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivateChatDetail'
+              example:
+                id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
+                chatType: 'private'
+                members: ['mercuriLorenzo', 'Max']
+                # MercuriLorenzo's POV
+                name: 'Max'
+                photo: 'https://api.wasatext.com/photos/Max.png'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+  
+  # group endpoints
+  /groups:
+    post:
+      operationId: 'createGroup'
+      description: 'Creates a new group chat with a name, an optional photo, and a list of initial members'
+      summary: 'Create a new group chat'
+      tags: ['Group']
+      requestBody:
+        description: 'Group creation data: name, photo (optional) and list of initial members'
+        content:
+          multipart/form-data:
+            schema:
+              description: 'Object containing the multipart payload (JSON data + binary file)'
+              type: object
+              properties:
+                data:
+                  description: 'Group data in JSON format'
+                  type: object
+                  properties:
+                    name:
+                      $ref: '#/components/schemas/GroupName'
+                    members:
+                      description: 'List of the usernames of the initial members of the group'
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/Username'
+                      minItems: 2
+                      maxItems: 100
+                  required: [name, members]
+                photoFile:
+                  $ref: '#/components/schemas/Photo'
+              required: [data]
+            encoding:                                 # for multipart/form-data with JSON field
+              data:
+                contentType: application/json
+        required: true
+      responses:
+        '201':
+          description: 'Group chat created successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupDetail'
+              example:
+                id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
+                chatType: 'group'
+                members: ['Alice', 'Bob', 'Charlie']
+                name: 'Dev Team'
+                photo: 'https://api.wasatext.com/photos/dev_team.png'
+                snippet:
+                  id: '12b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                  content:
+                    text: 'Meeting moved to Friday.'
+                    emoji: '📷'
+                  date: '2025-11-15T19:00:00Z'
+                  user: 'Charlie'
+                  state: 'received'
+                messages:
+                  - id: '9b1deb4d-3b7d-4bad-9bdd-2b0c7b3dcb6d'
+                    content:
+                      text: 'When is the next stand-up?'
+                    date: '2025-11-15T18:55:00Z'
+                    user: 'Alice'
+                    state: 'read'
+                  - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                    content:
+                      text: 'Meeting moved to Friday.'
+                      photo: 'https://api.wasatext.com/photos/meetingSchedule.png'
+                    date: '2025-11-15T19:00:00Z'
+                    user: 'Charlie'
+                    state: 'received'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+  
+  /groups/{chatId}/name:
+    patch:
+      operationId: 'setGroupName'
+      description: 'Update the name of a group the user is a member of'
+      summary: 'Update group name'
+      tags: ['Group']
+      parameters:
+        - $ref: '#/components/parameters/ParamChatId'
+      requestBody:
+        description: 'New group name'
+        content:
+          application/merge-patch+json:
+            schema:
+              description: 'Object containing the new group name'
+              type: object
+              properties:
+                name:
+                  $ref: '#/components/schemas/GroupName'
+        required: true
+      responses:
+        '200':
+          description: 'Group name updated successfully'
+          content:
+            application/json: 
+              schema:
+                $ref: '#/components/schemas/GroupDetail'
+              example:
+                id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
+                chatType: 'group'
+                name: 'Computer Science Study Group'
+                photo: 'https://api.wasatext.com/photos/cs_group.png'
+                members: ['Alice', 'Bob', 'Charlie'] 
+                snippet:
+                  id: '156a4180-65aa-42ac-a945-5fd21dec0538'
+                  content:
+                    text: 'The exam is next Monday at 9 AM.'
+                    emoji: '📷'
+                  date: '2025-11-10T09:05:00Z'
+                  user: 'Bob'
+                  state: 'received'
+                messages:
+                  - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                    content:
+                      text: 'Hey everyone, does anyone know the exam schedule?'
+                    date: '2025-11-10T09:00:00Z'
+                    user: 'Alice'
+                    state: 'read'
+                  - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
+                    content:
+                      text: 'The exam is next Monday at 9 AM.'
+                      photo: 'https://api.wasatext.com/photos/exameSchedule.jpg'
+                    date: '2025-11-10T09:05:00Z'
+                    user: 'Bob'
+                    state: 'received'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+  
+  /groups/{chatId}/photo:
+    patch:
+      operationId: 'setGroupPhoto'
+      description: 'Updates the picture of a group the user is a member of via multipart upload'
+      summary: 'Update group photo'
+      tags: ['Group']
+      parameters:
+        - $ref: '#/components/parameters/ParamChatId'
+      requestBody:
+        description: 'New group photo'
+        content:
+          multipart/form-data:
+            schema:
+              description: 'Object containing the binary file of the photo to upload'
+              type: object
+              properties:
+                photoFile:
+                  $ref: '#/components/schemas/Photo'
+              required: [photoFile]
+        required: true
+      responses:
+        '200':
+          description: 'Group photo updated successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupDetail'
+              example:
+                id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
+                chatType: 'group'
+                name: 'Computer Science Study Group'
+                photo: 'https://api.wasatext.com/photos/cs_group.png'
+                members: ['Alice', 'Bob', 'Charlie']
+                snippet:
+                  id: '123a4180-65aa-42ac-a945-5fd21dec0538'
+                  content:
+                    text: 'The exam is next Monday at 9 AM.'
+                    emoji: '📷'
+                  date: '2025-11-10T09:05:00Z'
+                  user: 'Bob'
+                  state: 'received'
+                messages:
+                  - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                    content:
+                      text: 'Hey everyone, does anyone know the exam schedule?'
+                    date: '2025-11-10T09:00:00Z'
+                    user: 'Alice'
+                    state: 'read'
+                  - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
+                    content:
+                      text: 'The exam is next Monday at 9 AM.'
+                      photo: 'https://api.wasatext.com/photos/exameSchedule.jpg'
+                    date: '2025-11-10T09:05:00Z'
+                    user: 'Bob'
+                    state: 'received'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+
+  /groups/{chatId}/members:
+    post:
+      operationId: 'addToGroup'
+      description: |
+        Adds one or more users to an existing group chat the user is a member of.
+        If a user is already a member, they should be ignored
+      summary: 'Add users in a group'
+      tags: ['Group']
+      parameters:
+        - $ref: '#/components/parameters/ParamChatId'
+      requestBody:
+        description: 'List of the usernames of the new members to add to the group'
+        content:
+          application/json:
+            schema:
+              description: 'Payload for new members'
+              type: object
+              properties:
+                members:
+                  description: 'New members usernames'
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Username'
+                  minItems: 1
+                  maxItems: 100                           # better: group max size - group current size
+        required: true
+      responses:
+        '200':
+          description: 'New member added to the group successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupDetail'
+              example:
+                id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
+                chatType: 'group'
+                name: 'Computer Science Study Group'
+                photo: 'https://api.wasatext.com/photos/cs_group.png'
+                members: ['Alice', 'Bob', 'Charlie']
+                snippet:
+                  id: '25614180-65aa-42ac-a945-5fd21dec0538'
+                  content:
+                    text: 'The exam is next Monday at 9 AM.'
+                    emoji: '📷'
+                  date: '2025-11-10T09:05:00Z'
+                  user: 'Bob'
+                  state: 'received'
+                messages:
+                  - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                    content:
+                      text: 'Hey everyone, does anyone know the exam schedule?'
+                    date: '2025-11-10T09:00:00Z'
+                    user: 'Alice'
+                    state: 'read'
+                  - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
+                    content:
+                      text: 'The exam is next Monday at 9 AM.'
+                      photo: 'https://api.wasatext.com/photos/exameSchedule.jpg'
+                    date: '2025-11-10T09:05:00Z'
+                    user: 'Bob'
+                    state: 'received'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+
+  /groups/{chatId}/members/me:
+    delete:
+      operationId: 'leaveGroup'
+      description: 'Removes the authenticated user from a group he is a member of'
+      summary: 'Leave a group chat'
+      tags: ['Group']
+      parameters:
+        - $ref: '#/components/parameters/ParamChatId'
+      responses:
+        '200':
+          description: 'User left the group successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupDetail'
+              example:
+                id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
+                chatType: 'group'
+                name: 'Computer Science Study Group'
+                photo: 'https://api.wasatext.com/photos/cs_group.png'
+                members: ['Alice', 'Charlie']
+                snippet:
+                  id: '586a4180-65aa-42ac-a945-5fd21dec0538'
+                  content:
+                    text: 'The exam is next Monday at 9 AM.'
+                    emoji: '📷'
+                  date: '2025-11-10T09:05:00Z'
+                  user: 'Bob'
+                  state: 'received'
+                messages:
+                  - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                    content:
+                      text: 'Hey everyone, does anyone know the exam schedule?'
+                    date: '2025-11-10T09:00:00Z'
+                    user: 'Alice'
+                    state: 'read'
+                  - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
+                    content:
+                      text: 'The exam is next Monday at 9 AM.'
+                      photo: 'https://api.wasatext.com/photos/exameSchedule.jpg'
+                    date: '2025-11-10T09:05:00Z'
+                    user: 'Bob'
+                    state: 'received'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
