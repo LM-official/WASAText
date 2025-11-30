@@ -1,3 +1,5 @@
+//	Serve a creare e configurare l’oggetto router rt. Non va modificato.
+
 /*
 Package api exposes the main API engine. All HTTP APIs are handled here - so-called "business logic" should be here, or
 in a dedicated package (if that logic is complex enough).
@@ -38,10 +40,11 @@ package api
 
 import (
 	"errors"
-	"git.sapienzaapps.it/fantasticcoffee/fantastic-coffee-decaffeinated/service/database"
+	"net/http"
+
+	"github.com/MercuriLorenzo/WASAText/service/database"
 	"github.com/julienschmidt/httprouter"
 	"github.com/sirupsen/logrus"
-	"net/http"
 )
 
 // Config is used to provide dependencies and configuration to the New function.

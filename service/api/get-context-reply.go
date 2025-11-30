@@ -1,7 +1,19 @@
+/*	UN FILE PER OGNI HANDLER
+	Questo file contiene un esempio di handler http che implementa l'interfaccia wrapper definita
+	dal prof nel file api-context-wrapper.go.
+	Lascia intendere che anche noi dobbiamo implementare tale interfaccia e che dobbiamo fare un
+	file diverso per ogni nostro handler. Ad esempio avremo:
+		search-users. go 	(per l'operationId searchUsers)
+		get-user. go 		(per l'operationId getUser)
+		update-user.go		(per l'operationId updateUser)
+
+	(stessa cosa avviene nel file get-hello-world.go)
+*/
+
 package api
 
 import (
-	"git.sapienzaapps.it/fantasticcoffee/fantastic-coffee-decaffeinated/service/api/reqcontext"
+	"github.com/MercuriLorenzo/WASAText/service/api/reqcontext"
 	"github.com/julienschmidt/httprouter"
 	"net/http"
 )

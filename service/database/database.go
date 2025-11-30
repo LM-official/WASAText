@@ -1,3 +1,8 @@
+/* In service/database/database.go dovrai popolare l'interfaccia AppDatabase con tutti i metodi
+	necessari per implementare gli operationId definiti nell'api.
+	Ogni metodo deve riflettere un'operazione di accesso ai dati.
+*/
+
 /*
 Package database is the middleware between the app database and the code. All data (de)serialization (save/load) from a
 persistent database are handled here. Database specific logic should never escape this package.

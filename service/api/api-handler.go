@@ -1,3 +1,8 @@
+/*	In questo file, per ogni handler creato, dobbiamo registrare la rotta corrispondente.
+	Qui non si implementa logica: solo associazione route-handler.
+	Esempio: rt.router.GET("/users", rt.wrap(rt.searchUsersHandler))
+*/
+
 package api
 
 import (

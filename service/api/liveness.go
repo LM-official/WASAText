@@ -1,8 +1,19 @@
+/* LASCIO COSI COM'E
+	Questo file definisce l'handler per l'endpoint di /liveness usato per verificare lo stato di
+	salute del servizio.
+	Questa funzione deve, come tutti gli altri handler, attaccata ad un path nel file api-handler.go
+	E' GIA STATO FATTO DAL PROF. Lasciare (o re-inserire) quella riga li:
+		rt. router. GET ("/liveness", It.liveness)
+*/
+
+// Contiene l'handler per GET /liveness. Non va modificato.
+
 package api
 
 import (
-	"github.com/julienschmidt/httprouter"
 	"net/http"
+
+	"github.com/julienschmidt/httprouter"
 )
 
 // liveness is an HTTP handler that checks the API server status. If the server cannot serve requests (e.g., some
