@@ -1,19 +1,112 @@
 package service
 
-// base types
-type Username string
-type Photo string
+import "time"
+
+// ---------- ERROR ----------
+// omitted, used base net/http Error struct
+
+// ---------- PHOTO ----------
+type Photo []byte
 type PhotoURL string
+
+// ---------- ID ----------
 type Id string
+
+// ---------- USER ----------
+type Username string
+type User struct {
+	Username Username `json:"username"`
+	Photo    PhotoURL `json:"photo"`
+}
+
+// ---------- MESSAGE BASE ----------
+type MessageState string
+
+const (
+	MessageStateReceived MessageState = "received"
+	MessageStateRead     MessageState = "read"
+)
+
+type MessageBase struct {
+	Date  time.Time    `json:"date"`
+	User  Username     `json:"user"`
+	State MessageState `json:"state"`
+}
+
+// ---------- MESSAGE ----------
 type MessageId string
 type MessageText string
-type SnippetId string
-type Emoji string
-type CommentId string
-type ChatId string
-type GroupName string
+type MessageContent struct {
+	Text  MessageText `json:"text,omitempty"` // omitempty: field does not show in JSON if empty
+	Photo PhotoURL    `json:"photo,omitempty"`
+}
+type Message struct {
+	MessageBase
+	Id      MessageId      `json:"id"`
+	Content MessageContent `json:"content"`
+}
 
-// structs
-type User struct {
-	
+// ---------- EMOJI ----------
+type Emoji string
+
+// ---------- SNIPPET ----------
+type SnippetId string
+type SnippetText string
+type SnippetContent struct {
+	Text  SnippetText `json:"text"`
+	Emoji Emoji       `json:"emoji"`
+}
+type Snippet struct {
+	MessageBase
+	Id      SnippetId      `json:"id"`
+	Content SnippetContent `json:"content"`
+}
+
+// ---------- COMMENT ----------
+type CommentId string
+type Comment struct {
+	Id    CommentId `json:"id"`
+	Emoji Emoji     `json:"emoji"`
+	User  Username  `json:"user"`
+}
+
+// ---------- CHAT BASE ----------
+type ChatId string
+type Members []Username
+
+const (
+	ChatTypeGroup   string = "group"
+	ChatTypePrivate string = "private"
+)
+
+type ChatSummary struct {
+	Id      ChatId  `json:"id"`
+	Members Members `json:"members"`
+	Snippet `json:"snippet"`
+}
+type Messages []Message
+
+// ---------- CHAT GROUP ----------
+type GroupName string
+type GroupSummary struct {
+	ChatSummary
+	Type  string    `json:"chatType"`
+	Name  GroupName `json:"name"`
+	Photo PhotoURL  `json:"photo"`
+}
+type GroupDetail struct {
+	GroupSummary
+	Messages Messages `json:"messages"`
+}
+
+// ---------- CHAT PRIVATE ----------
+type PrivateChatSummary struct {
+	ChatSummary
+	Type  string   `json:"chatType"`
+	Name  Username `json:"name"`
+	Photo PhotoURL `json:"photo"`
+}
+type PrivateChatDetail struct {
+	PrivateChatSummary
+	Messages Messages `json:"messages"`
 }
