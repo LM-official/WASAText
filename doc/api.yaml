@@ -528,19 +528,17 @@ paths:                                                # rest endpoints
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/Username'
               example:
                 username: 'MercuriLorenzo'
-                photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
         '201':
           description: 'User successfully registered and logged in'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/Username'
               example:
                 username: 'MercuriLorenzo'
-                photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
         '400':
           $ref: '#/components/responses/BadRequest'
         '500':

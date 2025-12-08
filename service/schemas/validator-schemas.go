@@ -1,4 +1,4 @@
-package service
+package schemas
 
 import (
 	"errors"
@@ -54,6 +54,17 @@ func (i Id) IsValid() error {
 }
 
 // ---------- USER ----------
+// returns error if the UserId does not meets the rules, otherwise nil
+func (i UserId) IsValid() error {
+	// inherits Id validation rules
+	if err := Id(i).IsValid(); err != nil {
+		return err
+	}
+
+	// specific rules for UserId
+	return nil
+}
+
 // precompiled regex at package level to avoid recompiling it on each call
 var usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
@@ -72,12 +83,28 @@ func (u Username) IsValid() error {
 	return nil
 }
 
+// returns error if the UsernameRequest does not meets the rules, otherwise nil
+func (u *UsernameRequest) IsValid() error {
+	if u == nil {
+		return errors.New("user request is nil")
+	}
+
+	if err := u.Username.IsValid(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // returns error if the User does not meets the rules, otherwise nil
 func (u *User) IsValid() error {
 	if u == nil {
 		return errors.New("user is nil")
 	}
 
+	if err := u.Id.IsValid(); err != nil {
+		return err
+	}
 	if err := u.Username.IsValid(); err != nil {
 		return err
 	}

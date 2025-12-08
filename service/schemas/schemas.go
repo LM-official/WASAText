@@ -1,4 +1,4 @@
-package service
+package schemas
 
 import "time"
 
@@ -13,8 +13,13 @@ type PhotoURL string
 type Id string
 
 // ---------- USER ----------
+type UserId string
 type Username string
+type UsernameRequest struct {
+	Username Username `json:"username"`
+}
 type User struct {
+	Id       UserId   `json:"id"`
 	Username Username `json:"username"`
 	Photo    PhotoURL `json:"photo"`
 }

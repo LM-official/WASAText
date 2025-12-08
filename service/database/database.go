@@ -1,6 +1,6 @@
 /* In service/database/database.go dovrai popolare l'interfaccia AppDatabase con tutti i metodi
-	necessari per implementare gli operationId definiti nell'api.
-	Ogni metodo deve riflettere un'operazione di accesso ai dati.
+necessari per implementare gli operationId definiti nell'api.
+Ogni metodo deve riflettere un'operazione di accesso ai dati.
 */
 
 /*
@@ -39,12 +39,17 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/MercuriLorenzo/WASAText/service/schemas"
 )
 
 // AppDatabase is the high level interface for the DB
 type AppDatabase interface {
 	GetName() (string, error)
 	SetName(name string) error
+
+	// my methods
+	DoLogin(username schemas.Username) (schemas.UserId, bool, error)
 
 	Ping() error
 }
@@ -61,15 +66,21 @@ func New(db *sql.DB) (AppDatabase, error) {
 	}
 
 	// Check if table exists. If not, the database is empty, and we need to create the structure
-	var tableName string
-	err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='example_table';`).Scan(&tableName)
-	if errors.Is(err, sql.ErrNoRows) {
-		sqlStmt := `CREATE TABLE example_table (id INTEGER NOT NULL PRIMARY KEY, name TEXT);`
-		_, err = db.Exec(sqlStmt)
-		if err != nil {
-			return nil, fmt.Errorf("error creating database structure: %w", err)
-		}
+	//var tableName string
+	//err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='example_table';`).Scan(&tableName)
+	//if errors.Is(err, sql.ErrNoRows) {
+	//sqlStmt := `CREATE TABLE example_table (id INTEGER NOT NULL PRIMARY KEY, name TEXT);`
+	const sqlStmt = `
+	CREATE TABLE IF NOT EXISTS users (
+		id TEXT NOT NULL PRIMARY KEY,
+		username TEXT NOT NULL UNIQUE,
+		photo TEXT
+	);`
+	_, err := db.Exec(sqlStmt)
+	if err != nil {
+		return nil, fmt.Errorf("error creating users table: %w", err)
 	}
+	//}
 
 	return &appdbimpl{
 		c: db,
