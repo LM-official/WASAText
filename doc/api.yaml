@@ -65,8 +65,11 @@ components:                                           # reusable components
       pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
       minLength: 36
       maxLength: 36
-      readOnly: true
       example: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
+
+    UserId:
+      allOf:
+        - $ref: '#/components/schemas/Id'
 
     Username:
       description: 'Standard username, without white spaces'
@@ -80,13 +83,17 @@ components:                                           # reusable components
       description: 'Standard user'
       type: object
       properties:
-        username:                                     # univocal identifier
+        id:
+          allOf:
+            - $ref: '#/components/schemas/UserId'
+            - readOnly: true
+        username:
           allOf:
             - $ref: '#/components/schemas/Username'
             - readOnly: true
         photo:
           $ref: '#/components/schemas/PhotoURL'
-      required: [username, photo]
+      required: [id, username, photo]
       readOnly: true
       additionalProperties: false                     # no other properties allowed
 
@@ -105,7 +112,7 @@ components:                                           # reusable components
           example: '2025-11-04T10:32:00Z'
         user:
           allOf:
-            - $ref: '#/components/schemas/Username'
+            - $ref: '#/components/schemas/UserId'
             - readOnly: true
         state:
           description: |
@@ -125,6 +132,7 @@ components:                                           # reusable components
     MessageId:
       allOf:
         - $ref: '#/components/schemas/Id'
+        - readOnly: true
       
     MessageText:
       description: 'Standard message text content'
@@ -164,6 +172,7 @@ components:                                           # reusable components
     SnippetId:
       allOf:
         - $ref: '#/components/schemas/Id'
+        - readOnly: true
 
     Snippet:
       description: 'Standard snippet of a message'
@@ -191,6 +200,7 @@ components:                                           # reusable components
     CommentId:
       allOf:
         - $ref: '#/components/schemas/Id'
+        - readOnly: true
 
     Comment:
       description: 'Standard comment to a message'
@@ -202,7 +212,7 @@ components:                                           # reusable components
           $ref: '#/components/schemas/Emoji'
         user:
           allOf:
-            - $ref: '#/components/schemas/Username'
+            - $ref: '#/components/schemas/UserId'
             - readOnly: true
       required: [id, emoji, user]
       additionalProperties: false                     # no other properties allowed
@@ -210,6 +220,7 @@ components:                                           # reusable components
     ChatId:
       allOf:
         - $ref: '#/components/schemas/Id'
+        - readOnly: true
     
     ChatSummary:                                      # generic chat summary schema
       description: 'Standard chat summary, without full messages list, private chat or group chat'
@@ -221,7 +232,7 @@ components:                                           # reusable components
           description: 'Members of the chat'
           type: array
           items:
-            $ref: '#/components/schemas/Username'
+            $ref: '#/components/schemas/UserId'
           minItems: 0
           maxItems: 100
           uniqueItems: true                           # ensure that each member could be once in the members list
@@ -294,7 +305,7 @@ components:                                           # reusable components
               description: 'The two members of the private chat'
               type: array
               items:
-                $ref: '#/components/schemas/Username'
+                $ref: '#/components/schemas/UserId'
               minItems: 2
               maxItems: 2
               readOnly: true
@@ -528,17 +539,25 @@ paths:                                                # rest endpoints
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Username'
+                description: 'Object containing the userId'
+                type: object
+                properties:
+                  id:
+                    $ref: '#/components/schemas/UserId'
               example:
-                username: 'MercuriLorenzo'
+                id: '126a4180-65aa-42ec-a945-5fd21dec0538'
         '201':
           description: 'User successfully registered and logged in'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Username'
+                description: 'Object containing the userId'
+                type: object
+                properties:
+                  id:
+                    $ref: '#/components/schemas/UserId'
               example:
-                username: 'MercuriLorenzo'
+                id: '126a4180-65aa-42ec-a945-5fd21dec0538'
         '400':
           $ref: '#/components/responses/BadRequest'
         '500':
@@ -576,6 +595,7 @@ paths:                                                # rest endpoints
               schema:
                 $ref: '#/components/schemas/User'
               example:
+                id: '126a4180-65aa-42ec-a945-5fd21dec0538'
                 username: 'NewMercuriLorenzo'
                 photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
         '400':
@@ -619,6 +639,7 @@ paths:                                                # rest endpoints
               schema:
                 $ref: '#/components/schemas/User'
               example:
+                id: '126a4180-65aa-42ec-a945-5fd21dec0538'
                 username: 'MercuriLorenzo'
                 photo: 'https://api.wasatext.com/photos/newMercuriLorenzo.png'
         '400':
@@ -652,6 +673,7 @@ paths:                                                # rest endpoints
               schema:
                 $ref: '#/components/schemas/User'
               example:
+                id: '126a4180-65aa-42ec-a945-5fd21dec0538'
                 username: 'MercuriLorenzo'
                 photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
         '400':
@@ -698,7 +720,7 @@ paths:                                                # rest endpoints
                 chats:
                   - id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
                     chatType: 'private'
-                    members: ['Alice', 'Bob']
+                    members: ['126a4180-65aa-42ec-a945-5fd21dec0538', 'cf6a4180-65aa-42ec-a945-5fd21dec0538']
                     # Alice's POV
                     name: 'Bob'
                     photo: 'https://api.wasatext.com/photos/bob.png'
@@ -708,11 +730,11 @@ paths:                                                # rest endpoints
                         text: 'Hey, are you free tonight?'
                         emoji: '📷'
                       date: '2025-11-15T18:30:00Z'
-                      user: 'Bob'
+                      user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                       state: 'read'
                   - id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
                     chatType: 'group'
-                    members: ['Alice', 'Bob', 'Charlie']
+                    members: ['cf6ad480-65aa-42ec-a945-5fd21dec0538', 'cf6a4da0-65aa-42ec-a945-5fd21dec0538', 'ab6a4180-65aa-42ec-a945-5fd21dec0538']
                     name: 'Weekend Trip'
                     photo: 'https://api.wasatext.com/photos/trip.png'
                     snippet:
@@ -720,7 +742,7 @@ paths:                                                # rest endpoints
                       content:
                         text: 'I booked the hotel!'
                       date: '2025-11-15T19:00:00Z'
-                      user: 'Charlie'
+                      user: 'cf6ad480-65aa-42ec-a945-5fd21dec0538'
                       state: 'received'
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -754,7 +776,7 @@ paths:                                                # rest endpoints
               example:
                 id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
                 chatType: 'private'
-                members: ['Alice', 'Bob']
+                members: ['cf6a4180-65aa-42ec-a945-5fd21dec0538', 'c23a4180-65aa-42ec-a945-5fd21dec0538']
                 # Alice's POV
                 name: 'Bob'
                 photo: 'https://api.wasatext.com/photos/bob.png'
@@ -764,21 +786,21 @@ paths:                                                # rest endpoints
                     text: 'I will be there in 5 minutes.'
                     emoji: '📷'
                   date: '2025-11-15T18:35:00Z'
-                  user: 'Bob'
+                  user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                   state: 'received'
                 messages:
                   - id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
                     content:
                       text: 'Hey Bob, are you coming?'
                     date: '2025-11-15T18:30:00Z'
-                    user: 'Alice'
+                    user: 'c23a4180-65aa-42ec-a945-5fd21dec0538'
                     state: 'read'
                   - id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
                     content:
                       text: 'I will be there in 5 minutes.'
                       photo: 'https://api.wasatext.com/photos/photo.png'
                     date: '2025-11-15T18:35:00Z'
-                    user: 'Bob'
+                    user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                     state: 'received'
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -831,7 +853,7 @@ paths:                                                # rest endpoints
                 content:
                   text: 'Hello, how are you?'
                 date: '2025-11-15T18:45:00Z'
-                user: 'MercuriLorenzo'
+                user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                 state: 'received'
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -882,7 +904,7 @@ paths:                                                # rest endpoints
                 content:
                   text: 'Hello, how are you?'
                 date: '2025-11-15T19:00:00Z'
-                user: 'MercuriLorenzo'
+                user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                 state: 'received'
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -930,10 +952,10 @@ paths:                                                # rest endpoints
                 comments:
                   - id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
                     emoji: '👍'           
-                    user: 'MercuriLorenzo'
+                    user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                   - id: 'd63b4180-65aa-42ec-a945-5fd21dec0538'
                     emoji: '😂'           
-                    user: 'Max'
+                    user: '1a6a4180-65aa-42ec-a945-5fd21dec0538'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -981,7 +1003,7 @@ paths:                                                # rest endpoints
               example:
                 id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
                 emoji: '👍'           
-                user: 'MercuriLorenzo'
+                user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
         '201':
           description: 'Comment created successfully'
           content:
@@ -991,7 +1013,7 @@ paths:                                                # rest endpoints
               example:
                 id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
                 emoji: '👍'           
-                user: 'MercuriLorenzo'
+                user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1024,7 +1046,7 @@ paths:                                                # rest endpoints
               example:
                 id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
                 emoji: '👍'           
-                user: 'MercuriLorenzo'
+                user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1063,7 +1085,7 @@ paths:                                                # rest endpoints
                 content:
                   text: 'This message has been deleted.'
                 date: '2025-11-15T18:45:00.123Z'
-                user: 'MercuriLorenzo'
+                user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                 state: 'read'
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -1094,12 +1116,12 @@ paths:                                                # rest endpoints
         content:
           application/json:
             schema:
-              description: 'Object containing the target username'
+              description: 'Object containing the target user'
               type: object
               properties:
-                username:
-                  $ref: '#/components/schemas/Username'
-              required: [username]
+                id:
+                  $ref: '#/components/schemas/UserId'
+              required: [id]
         required: true
       responses:
         '200':
@@ -1111,7 +1133,7 @@ paths:                                                # rest endpoints
               example:
                 id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
                 chatType: 'private'
-                members: ['Alice', 'Bob']
+                members: ['cf6a4180-65aa-42ec-a945-5fd21dec0538', '786a4180-65aa-42ec-a945-5fd21dec0538']
                 # Alice's POV
                 name: 'Bob'
                 photo: 'https://api.wasatext.com/photos/bob.png'
@@ -1121,21 +1143,21 @@ paths:                                                # rest endpoints
                     text: 'I will be there in 5 minutes.'
                     emoji: '📷'
                   date: '2025-11-15T18:35:00Z'
-                  user: 'Bob'
+                  user: '786a4180-65aa-42ec-a945-5fd21dec0538'
                   state: 'received'
                 messages:
                   - id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
                     content:
                       text: 'Hey Bob, are you coming?'
                     date: '2025-11-15T18:30:00Z'
-                    user: 'Alice'
+                    user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                     state: 'read'
                   - id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
                     content:
                       text: 'I will be there in 5 minutes.'
                       photo: 'https://api.wasatext.com/photos/photo.png'
                     date: '2025-11-15T18:35:00Z'
-                    user: 'Bob'
+                    user: '786a4180-65aa-42ec-a945-5fd21dec0538'
                     state: 'received'
         '201':
           description: 'Private chat created successfully'
@@ -1146,7 +1168,7 @@ paths:                                                # rest endpoints
               example:
                 id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
                 chatType: 'private'
-                members: ['mercuriLorenzo', 'Max']
+                members: ['786b4180-65aa-42ec-a945-5fd21dec0538', '786a4180-65aa-42ec-a945-5fd21dec0533']
                 # MercuriLorenzo's POV
                 name: 'Max'
                 photo: 'https://api.wasatext.com/photos/Max.png'
@@ -1185,10 +1207,10 @@ paths:                                                # rest endpoints
                     name:
                       $ref: '#/components/schemas/GroupName'
                     members:
-                      description: 'List of the usernames of the initial members of the group'
+                      description: 'List of the UserId of the initial members of the group'
                       type: array
                       items:
-                        $ref: '#/components/schemas/Username'
+                        $ref: '#/components/schemas/UserId'
                       minItems: 2
                       maxItems: 100
                   required: [name, members]
@@ -1209,7 +1231,7 @@ paths:                                                # rest endpoints
               example:
                 id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
                 chatType: 'group'
-                members: ['Alice', 'Bob', 'Charlie']
+                members: ['cab2c3d4-e5f6-42ec-a945-5fd21dec0538', '90b2c3d4-e5f6-42ec-a945-5fd21dec0538', '27b2c3d4-e5f6-42ec-a945-5fd21dec0538']
                 name: 'Dev Team'
                 photo: 'https://api.wasatext.com/photos/dev_team.png'
                 snippet:
@@ -1218,21 +1240,21 @@ paths:                                                # rest endpoints
                     text: 'Meeting moved to Friday.'
                     emoji: '📷'
                   date: '2025-11-15T19:00:00Z'
-                  user: 'Charlie'
+                  user: 'cab2c3d4-e5f6-42ec-a945-5fd21dec0538'
                   state: 'received'
                 messages:
                   - id: '9b1deb4d-3b7d-4bad-9bdd-2b0c7b3dcb6d'
                     content:
                       text: 'When is the next stand-up?'
                     date: '2025-11-15T18:55:00Z'
-                    user: 'Alice'
+                    user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'read'
                   - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     content:
                       text: 'Meeting moved to Friday.'
                       photo: 'https://api.wasatext.com/photos/meetingSchedule.png'
                     date: '2025-11-15T19:00:00Z'
-                    user: 'Charlie'
+                    user: 'cab2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'received'
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -1280,28 +1302,28 @@ paths:                                                # rest endpoints
                 chatType: 'group'
                 name: 'Computer Science Study Group'
                 photo: 'https://api.wasatext.com/photos/cs_group.png'
-                members: ['Alice', 'Bob', 'Charlie'] 
+                members: ['90b2c3d4-e5f6-42ec-a945-5fd21dec0538', '80b2c3d4-e5f6-42ec-a945-5fd21dec0538', '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'] 
                 snippet:
                   id: '156a4180-65aa-42ac-a945-5fd21dec0538'
                   content:
                     text: 'The exam is next Monday at 9 AM.'
                     emoji: '📷'
                   date: '2025-11-10T09:05:00Z'
-                  user: 'Bob'
+                  user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                   state: 'received'
                 messages:
                   - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     content:
                       text: 'Hey everyone, does anyone know the exam schedule?'
                     date: '2025-11-10T09:00:00Z'
-                    user: 'Alice'
+                    user: '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'read'
                   - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
                     content:
                       text: 'The exam is next Monday at 9 AM.'
                       photo: 'https://api.wasatext.com/photos/exameSchedule.jpg'
                     date: '2025-11-10T09:05:00Z'
-                    user: 'Bob'
+                    user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'received'
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -1352,28 +1374,28 @@ paths:                                                # rest endpoints
                 chatType: 'group'
                 name: 'Computer Science Study Group'
                 photo: 'https://api.wasatext.com/photos/cs_group.png'
-                members: ['Alice', 'Bob', 'Charlie']
+                members: ['90b2c3d4-e5f6-42ec-a945-5fd21dec0538', '80b2c3d4-e5f6-42ec-a945-5fd21dec0538', '70b2c3d4-e5f6-42ec-a945-5fd21dec0538']
                 snippet:
                   id: '123a4180-65aa-42ac-a945-5fd21dec0538'
                   content:
                     text: 'The exam is next Monday at 9 AM.'
                     emoji: '📷'
                   date: '2025-11-10T09:05:00Z'
-                  user: 'Bob'
+                  user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                   state: 'received'
                 messages:
                   - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     content:
                       text: 'Hey everyone, does anyone know the exam schedule?'
                     date: '2025-11-10T09:00:00Z'
-                    user: 'Alice'
+                    user: '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'read'
                   - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
                     content:
                       text: 'The exam is next Monday at 9 AM.'
                       photo: 'https://api.wasatext.com/photos/exameSchedule.jpg'
                     date: '2025-11-10T09:05:00Z'
-                    user: 'Bob'
+                    user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'received'
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -1411,10 +1433,10 @@ paths:                                                # rest endpoints
               type: object
               properties:
                 members:
-                  description: 'New members usernames'
+                  description: 'New members userId'
                   type: array
                   items:
-                    $ref: '#/components/schemas/Username'
+                    $ref: '#/components/schemas/UserId'
                   minItems: 1
                   maxItems: 100                           # better: group max size - group current size
         required: true
@@ -1430,28 +1452,28 @@ paths:                                                # rest endpoints
                 chatType: 'group'
                 name: 'Computer Science Study Group'
                 photo: 'https://api.wasatext.com/photos/cs_group.png'
-                members: ['Alice', 'Bob', 'Charlie']
+                members: ['90b2c3d4-e5f6-42ec-a945-5fd21dec0538', '70b2c3d4-e5f6-42ec-a945-5fd21dec0538', '80b2c3d4-e5f6-42ec-a945-5fd21dec0538']
                 snippet:
                   id: '25614180-65aa-42ac-a945-5fd21dec0538'
                   content:
                     text: 'The exam is next Monday at 9 AM.'
                     emoji: '📷'
                   date: '2025-11-10T09:05:00Z'
-                  user: 'Bob'
+                  user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                   state: 'received'
                 messages:
                   - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     content:
                       text: 'Hey everyone, does anyone know the exam schedule?'
                     date: '2025-11-10T09:00:00Z'
-                    user: 'Alice'
+                    user: '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'read'
                   - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
                     content:
                       text: 'The exam is next Monday at 9 AM.'
                       photo: 'https://api.wasatext.com/photos/exameSchedule.jpg'
                     date: '2025-11-10T09:05:00Z'
-                    user: 'Bob'
+                    user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'received'
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -1490,28 +1512,28 @@ paths:                                                # rest endpoints
                 chatType: 'group'
                 name: 'Computer Science Study Group'
                 photo: 'https://api.wasatext.com/photos/cs_group.png'
-                members: ['Alice', 'Charlie']
+                members: ['90b2c3d4-e5f6-42ec-a945-5fd21dec0538', '80b2c3d4-e5f6-42ec-a945-5fd21dec0538']
                 snippet:
                   id: '586a4180-65aa-42ac-a945-5fd21dec0538'
                   content:
                     text: 'The exam is next Monday at 9 AM.'
                     emoji: '📷'
                   date: '2025-11-10T09:05:00Z'
-                  user: 'Bob'
+                  user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                   state: 'received'
                 messages:
                   - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     content:
                       text: 'Hey everyone, does anyone know the exam schedule?'
                     date: '2025-11-10T09:00:00Z'
-                    user: 'Alice'
+                    user: '80b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'read'
                   - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
                     content:
                       text: 'The exam is next Monday at 9 AM.'
                       photo: 'https://api.wasatext.com/photos/exameSchedule.jpg'
                     date: '2025-11-10T09:05:00Z'
-                    user: 'Bob'
+                    user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'received'
         '400':
           $ref: '#/components/responses/BadRequest'

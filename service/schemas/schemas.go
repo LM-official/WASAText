@@ -34,7 +34,7 @@ const (
 
 type MessageBase struct {
 	Date  time.Time    `json:"date"`
-	User  Username     `json:"user"`
+	User  UserId       `json:"user"`
 	State MessageState `json:"state"`
 }
 
@@ -58,8 +58,8 @@ type Emoji string
 type SnippetId string
 type SnippetText string
 type SnippetContent struct {
-	Text  SnippetText `json:"text"`
-	Emoji Emoji       `json:"emoji"`
+	Text  SnippetText `json:"text,omitempty"`
+	Emoji Emoji       `json:"emoji,omitempty"`
 }
 type Snippet struct {
 	MessageBase
@@ -72,12 +72,12 @@ type CommentId string
 type Comment struct {
 	Id    CommentId `json:"id"`
 	Emoji Emoji     `json:"emoji"`
-	User  Username  `json:"user"`
+	User  UserId    `json:"user"`
 }
 
 // ---------- CHAT BASE ----------
 type ChatId string
-type Members []Username
+type Members []UserId
 
 const (
 	ChatTypeGroup   string = "group"

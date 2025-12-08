@@ -335,7 +335,7 @@ func (m Members) IsValid() error {
 	}
 
 	// unique members check
-	seen := make(map[Username]bool, n)
+	seen := make(map[UserId]bool, n)
 
 	for _, member := range m {
 		if err := member.IsValid(); err != nil { // check each member validity
