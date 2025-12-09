@@ -1,7 +1,11 @@
 package database
 
 import (
+	"database/sql"
+	"errors"
+
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
+	"github.com/gofrs/uuid"
 )
 
 // DoLogin checks if a user with the given username exists in the database.
@@ -17,18 +21,23 @@ func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, e
 		return id, true, nil
 	}
 
-	// user not found, create the new user (HTTP 201)
+	// error searching for the user (error != no row found, eg. connection issue)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return schemas.UserId(""), false, err
+	}
+
+	// user not found (missing row), create new user (HTTP 201)
 	// generates the new UUID
-	newUUID, err := schemas.CreateUUID("UserId")
+	newUUID, err := uuid.NewV4()
 	if err != nil {
 		return schemas.UserId(""), false, err
 	}
 
 	// insert the new user in the database
-	_, err = db.c.Exec("INSERT INTO users (id, username, photo) VALUES (?, ?, ?)", newUUID, string(username), "db/defaultPhoto.png")
+	_, err = db.c.Exec("INSERT INTO users (id, username, photo) VALUES (?, ?, ?)", newUUID.String(), string(username), "db/defaultPhoto.png")
 	if err != nil {
 		return schemas.UserId(""), false, err
 	}
 
-	return schemas.UserId(newUUID), false, nil
+	return schemas.UserId(newUUID.String()), false, nil
 }

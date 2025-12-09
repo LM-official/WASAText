@@ -17,6 +17,7 @@ func (rt *_router) Handler() http.Handler {
 
 	// login endpoint
 	rt.router.POST("/session", rt.wrap(rt.doLogin))
+	rt.router.PATCH("/me/username", rt.wrap(rt.authenticate(rt.setMyUserName)))
 
 	// Special routes
 	rt.router.GET("/liveness", rt.liveness)

@@ -13,13 +13,14 @@ func (rt *_router) doLogin(w http.ResponseWriter, r *http.Request, ps httprouter
 	// parse request body
 	var req schemas.UsernameRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		ctx.Logger.WithError(err).Error("Bad request body")
+		ctx.Logger.WithError(err).Error("bad request body")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	// validate input
 	if err := req.IsValid(); err != nil {
+		ctx.Logger.WithError(err).Error("bad request body")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -27,18 +28,19 @@ func (rt *_router) doLogin(w http.ResponseWriter, r *http.Request, ps httprouter
 	// query
 	id, found, err := rt.db.DoLogin(req.Username)
 	if err != nil {
-		ctx.Logger.WithError(err).Error("Login failed")
+		ctx.Logger.WithError(err).Error("login failed")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	// response
+	w.Header().Set("Content-Type", "application/json")
+
 	if found {
 		w.WriteHeader(http.StatusOK)
 	} else {
 		w.WriteHeader(http.StatusCreated)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(id)
 }

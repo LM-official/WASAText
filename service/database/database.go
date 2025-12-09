@@ -50,7 +50,10 @@ type AppDatabase interface {
 
 	// my methods
 	DoLogin(username schemas.Username) (schemas.UserId, bool, error)
+	SetMyUserName(userId schemas.UserId, newUsername schemas.Username) (schemas.User, error)
 
+	// my helpers
+	UserExists(userId schemas.UserId) (bool, error)
 	Ping() error
 }
 
@@ -74,7 +77,7 @@ func New(db *sql.DB) (AppDatabase, error) {
 	CREATE TABLE IF NOT EXISTS users (
 		id TEXT NOT NULL PRIMARY KEY,
 		username TEXT NOT NULL UNIQUE,
-		photo TEXT
+		photo TEXT NOT NULL
 	);`
 	_, err := db.Exec(sqlStmt)
 	if err != nil {
