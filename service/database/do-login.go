@@ -17,25 +17,27 @@ func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, e
 	err := db.c.QueryRow(`SELECT id FROM users WHERE username = ?;`, string(username)).Scan(&id)
 
 	if err == nil {
-		// user found, login (HTTP 200)
+		// user found, login
 		return id, true, nil
 	}
 
-	// error searching for the user (error != no row found, eg. connection issue)
 	if !errors.Is(err, sql.ErrNoRows) {
+		// error searching for the user (error != no row found, eg. connection issue)
 		return schemas.UserId(""), false, err
 	}
 
-	// user not found (missing row), create new user (HTTP 201)
-	// generates the new UUID
+	// user not found (missing row), create new user
+	// generate the new UUID
 	newUUID, err := uuid.NewV4()
 	if err != nil {
+		// error generating the UUID
 		return schemas.UserId(""), false, err
 	}
 
 	// insert the new user in the database
-	_, err = db.c.Exec("INSERT INTO users (id, username, photo) VALUES (?, ?, ?)", newUUID.String(), string(username), "db/defaultPhoto.png")
+	_, err = db.c.Exec("INSERT INTO users (id, username, photo) VALUES (?, ?, ?)", newUUID.String(), string(username), "./db/defaultPhoto.png")
 	if err != nil {
+		// error inserting the new user
 		return schemas.UserId(""), false, err
 	}
 

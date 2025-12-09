@@ -18,8 +18,8 @@ func (rt *_router) doLogin(w http.ResponseWriter, r *http.Request, ps httprouter
 		return
 	}
 
-	// validate input
 	if err := req.IsValid(); err != nil {
+		// invalid input
 		ctx.Logger.WithError(err).Error("bad request body")
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -28,6 +28,7 @@ func (rt *_router) doLogin(w http.ResponseWriter, r *http.Request, ps httprouter
 	// query
 	id, found, err := rt.db.DoLogin(req.Username)
 	if err != nil {
+		// error during query
 		ctx.Logger.WithError(err).Error("login failed")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -42,5 +43,8 @@ func (rt *_router) doLogin(w http.ResponseWriter, r *http.Request, ps httprouter
 		w.WriteHeader(http.StatusCreated)
 	}
 
-	_ = json.NewEncoder(w).Encode(id)
+	// wrap id in object
+	_ = json.NewEncoder(w).Encode(struct {
+		Id schemas.UserId `json:"id"`
+	}{id})
 }

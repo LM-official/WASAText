@@ -8,20 +8,22 @@ import (
 )
 
 func (db *appdbimpl) UserExists(userId schemas.UserId) (bool, error) {
-	var temp int
+	if err := userId.IsValid(); err != nil {
+		// invalid userId format
+		return false, err
+	}
 
-	err := db.c.QueryRow("SELECT 1 FROM users WHERE id=?", userId).Scan(&temp)
-
-	// no row found -> user does not exist
+	err := db.c.QueryRow("SELECT 1 FROM users WHERE id=?", userId).Scan(new(int))
+	// user does not exist
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 
-	// some other error
+	// other error
 	if err != nil {
 		return false, err
 	}
 
-	// user exists and found
+	// user found
 	return true, nil
 }

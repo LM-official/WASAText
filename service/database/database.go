@@ -51,6 +51,7 @@ type AppDatabase interface {
 	// my methods
 	DoLogin(username schemas.Username) (schemas.UserId, bool, error)
 	SetMyUserName(userId schemas.UserId, newUsername schemas.Username) (schemas.User, error)
+	SearchUsers(username schemas.Username) ([]schemas.User, error)
 
 	// my helpers
 	UserExists(userId schemas.UserId) (bool, error)
@@ -69,10 +70,10 @@ func New(db *sql.DB) (AppDatabase, error) {
 	}
 
 	// Check if table exists. If not, the database is empty, and we need to create the structure
-	//var tableName string
-	//err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='example_table';`).Scan(&tableName)
-	//if errors.Is(err, sql.ErrNoRows) {
-	//sqlStmt := `CREATE TABLE example_table (id INTEGER NOT NULL PRIMARY KEY, name TEXT);`
+	// var tableName string
+	// err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='example_table';`).Scan(&tableName)
+	// if errors.Is(err, sql.ErrNoRows) {
+	// sqlStmt := `CREATE TABLE example_table (id INTEGER NOT NULL PRIMARY KEY, name TEXT);`
 	const sqlStmt = `
 	CREATE TABLE IF NOT EXISTS users (
 		id TEXT NOT NULL PRIMARY KEY,
@@ -83,7 +84,7 @@ func New(db *sql.DB) (AppDatabase, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error creating users table: %w", err)
 	}
-	//}
+	// }
 
 	return &appdbimpl{
 		c: db,

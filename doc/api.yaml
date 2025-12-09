@@ -83,7 +83,7 @@ components:                                           # reusable components
       description: 'Standard user'
       type: object
       properties:
-        id:
+        id:                                           # only doLogin returns user id
           allOf:
             - $ref: '#/components/schemas/UserId'
             - readOnly: true
@@ -93,7 +93,7 @@ components:                                           # reusable components
             - readOnly: true
         photo:
           $ref: '#/components/schemas/PhotoURL'
-      required: [id, username, photo]
+      required: [username, photo]
       readOnly: true
       additionalProperties: false                     # no other properties allowed
 
@@ -344,8 +344,8 @@ components:                                           # reusable components
   parameters:
     ParamUsername:
       name: username
-      description: 'User searched username'
-      in: path
+      description: 'Username prefix to search'
+      in: query
       schema:
         $ref: '#/components/schemas/Username'
       required: true
@@ -595,7 +595,6 @@ paths:                                                # rest endpoints
               schema:
                 $ref: '#/components/schemas/User'
               example:
-                id: '126a4180-65aa-42ec-a945-5fd21dec0538'
                 username: 'NewMercuriLorenzo'
                 photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
         '400':
@@ -657,11 +656,11 @@ paths:                                                # rest endpoints
         '504':
           $ref: '#/components/responses/GatewayTimeout'
 
-  /users/{username}:
+  /users:
     get:
-      operationId: 'getUser'
-      description: 'Retrieves profile information of a specific user by their username'
-      summary: 'Get user information by username'
+      operationId: 'getUsers'
+      description: 'Retrieves user profile information by username prefix'
+      summary: 'Get user by username prefix'
       tags: ['User']
       parameters:
         - $ref: '#/components/parameters/ParamUsername'
@@ -671,11 +670,22 @@ paths:                                                # rest endpoints
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                description: 'Object containing the list of users'
+                type: object
+                properties:
+                  users:
+                    description: 'List of user users'
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                    minItems: 0
+                    maxItems: 100
               example:
-                id: '126a4180-65aa-42ec-a945-5fd21dec0538'
-                username: 'MercuriLorenzo'
-                photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
+                users:
+                  - username: 'MercuriLorenzo'
+                    photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
+                  - username: 'MercuriLorenzo123'
+                    photo: 'https://api.wasatext.com/photos/mercuriLorenzo123.png'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

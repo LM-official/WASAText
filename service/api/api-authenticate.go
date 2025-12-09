@@ -7,7 +7,6 @@ import (
 
 	"github.com/MercuriLorenzo/WASAText/service/api/reqcontext"
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
-	"github.com/gofrs/uuid"
 	"github.com/julienschmidt/httprouter"
 )
 
@@ -25,17 +24,15 @@ func (rt *_router) authenticate(next httpRouterHandler) httpRouterHandler {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		token := strings.TrimPrefix(authHeader, "Bearer ")
+		userId := schemas.UserId(strings.TrimPrefix(authHeader, "Bearer "))
 
-		// checks if the token is a valid UUID
-		if _, err := uuid.FromString(token); err != nil {
+		if err := userId.IsValid(); err != nil {
+			// invalid userId format
 			ctx.Logger.WithError(err).Error("invalid token format")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		userId := schemas.UserId(token)
 
-		// check if the user exists in the database
 		exists, err := rt.db.UserExists(userId)
 		if err != nil {
 			// error in database check
@@ -45,7 +42,7 @@ func (rt *_router) authenticate(next httpRouterHandler) httpRouterHandler {
 		}
 		if !exists {
 			// user not found
-			ctx.Logger.Warnf("user %s not found during authentication", userId)
+			ctx.Logger.WithError(err).Error("user not found during authentication")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}

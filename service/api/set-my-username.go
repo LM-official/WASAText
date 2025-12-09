@@ -12,13 +12,13 @@ import (
 
 func (rt *_router) setMyUserName(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	// get the userId from the context
-	val := r.Context().Value(keyUserId)
-	if val == nil {
+	userId, ok := r.Context().Value(keyUserId).(schemas.UserId)
+	if !ok {
+		// user not authenticated
 		ctx.Logger.Error("user not authenticated")
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	userId := val.(schemas.UserId) // cast to UserId
 
 	// parsing request body
 	var req schemas.UsernameRequest
@@ -28,8 +28,8 @@ func (rt *_router) setMyUserName(w http.ResponseWriter, r *http.Request, ps http
 		return
 	}
 
-	// validate input
 	if err := req.IsValid(); err != nil {
+		// invalid input
 		ctx.Logger.WithError(err).Error("bad request body")
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -39,11 +39,14 @@ func (rt *_router) setMyUserName(w http.ResponseWriter, r *http.Request, ps http
 	user, err := rt.db.SetMyUserName(userId, req.Username)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			ctx.Logger.WithError(err).Error("database failed to set username: unique constraint violated")
+			// UNIQUE constraint violated
+			ctx.Logger.WithError(err).Error("database failed to update username: unique constraint violated")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		ctx.Logger.WithError(err).Error("database failed to set username")
+
+		// other error
+		ctx.Logger.WithError(err).Error("database failed to update username")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

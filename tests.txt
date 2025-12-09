@@ -1,0 +1,67 @@
+RUN SERVER (on another terminal):
+go run ./cmd/webapi/
+
+
+TESTS:
+all return other http codes if other errors occur
+
+
+1) DoLogin:
+curl -i -X POST http://localhost:3000/session \
+  -H "Content-Type: application/json" \
+  -d '{"username": "lorenzo"}'
+
+if lorenzo does not exists in database return 201 ad the UserId
+if lorenzo exists in database return 200 and the UserId
+
+curl -i -X POST http://localhost:3000/session \
+  -H "Content-Type: application/json" \
+  -d '{"usernam": "lorenzo"}'
+
+(on "usernam" the "e" is missing) returns 400
+
+curl -i -X POST http://localhost:3000/session \
+  -H "Content-Type: application/json" \
+  -d '{"username": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}'
+
+("username" does not meet the rules in validatori-schamas.go) returns 400
+
+
+2) SetMyUserName:
+curl -i -X PATCH http://localhost:3000/me/username \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <INCOLLA_QUI_IL_TUO_ID>" \
+  -d '{"username": "max"}'
+
+if the Bearer exists newUsername != oldUsername
+  return 200 and all the User info, change the username
+if the Bearer exists and newUsername == oldUsername
+  return 200 and all the User info, username unchanged
+if the Bearer does not exists or invalid format
+  return 401 and does not update the username
+
+curl -i -X PATCH http://localhost:3000/me/username \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer f0293c2b-2f74-456c-bb07-5472f0aa44b4" \
+  -d '{"username": ""}'
+
+if the Bearer exists but the newUsername does not meet the rules
+  return 400 and does not update the username
+if the Bearer exists but the newUsername is already used
+  return 400 and does not update the username
+
+
+3) SearchUsers:
+curl -i -X GET "http://localhost:3000/users?username=ma" \
+     -H "Authorization: Bearer <INCOLLA_QUI_IL_TUO_ID>"
+
+if the Bearer exists and the usernamePrefix should find someone
+  return 200 and the list with the Username founded
+if the Bearer exists and the usernamePrefix should find someone but the Username list overflow the limit
+  return 200 and the partial list with the Username founded
+if the Bearer does not exists or invalid format
+  return 401
+if the Bearer exists and the usernamePrefix should not find someone
+  return 404
+if the Bearer exists and the usernamePrefix should find someone but the usernamePrefix does not meet the rules
+  return 400

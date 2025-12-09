@@ -19,7 +19,7 @@ type UsernameRequest struct {
 	Username Username `json:"username"`
 }
 type User struct {
-	Id       UserId   `json:"id"`
+	Id       UserId   `json:"id,omitempty"` // only doLogin returns the Id
 	Username Username `json:"username"`
 	Photo    PhotoURL `json:"photo"`
 }
