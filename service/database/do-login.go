@@ -14,7 +14,7 @@ func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, e
 	var id schemas.UserId
 
 	// search for the user in the database
-	err := db.c.QueryRow(`SELECT id FROM users WHERE username = ?;`, string(username)).Scan(&id)
+	err := db.c.QueryRow(`SELECT id FROM users WHERE username = ?;`, username).Scan(&id)
 
 	if err == nil {
 		// user found, login
@@ -35,7 +35,7 @@ func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, e
 	}
 
 	// insert the new user in the database
-	_, err = db.c.Exec("INSERT INTO users (id, username, photo) VALUES (?, ?, ?)", newUUID.String(), string(username), "./db/defaultPhoto.png")
+	_, err = db.c.Exec(`INSERT INTO users (id, username, photo) VALUES (?, ?, ?)`, newUUID.String(), username, "./db/defaultPhoto.png")
 	if err != nil {
 		// error inserting the new user
 		return schemas.UserId(""), false, err

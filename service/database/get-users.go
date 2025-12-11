@@ -4,10 +4,10 @@ import (
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 )
 
-func (db *appdbimpl) SearchUsers(username schemas.Username) ([]schemas.User, error) {
+func (db *appdbimpl) GetUsers(username schemas.Username) ([]schemas.User, error) {
 	results := make([]schemas.User, 0)
 
-	rows, err := db.c.Query("SELECT username, photo FROM users WHERE username LIKE ? LIMIT 20", username+"%")
+	rows, err := db.c.Query(`SELECT username, photo FROM users WHERE username LIKE ? LIMIT 20`, username+"%")
 	if err != nil {
 		// query error
 		return results, err

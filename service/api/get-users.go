@@ -9,7 +9,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
-func (rt *_router) searchUsers(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
+func (rt *_router) getUsers(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	// get username from query parameters
 	username := schemas.Username(r.URL.Query().Get("username"))
 	if err := username.IsValid(); err != nil {
@@ -20,7 +20,7 @@ func (rt *_router) searchUsers(w http.ResponseWriter, r *http.Request, ps httpro
 	}
 
 	// query
-	users, err := rt.db.SearchUsers(username)
+	users, err := rt.db.GetUsers(username)
 	if err != nil {
 		// other errors
 		ctx.Logger.WithError(err).Error("database error during user search")

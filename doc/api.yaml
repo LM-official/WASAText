@@ -4,17 +4,17 @@ info:
   description: 'API for managing a messaging platform'
   version: 1.0.0
 
-servers:                                              # base URL where the API is
-  - url: 'http://localhost:3000/v1'
+servers:                                              # Base URL where the API is
+  - url: 'http://localhost:3000'
     description: 'Local Development Environment (Docker/Go)'
-  - url: 'https://api.wasatext.com/v1'
+  - url: 'https://api.wasatext.com'
     description: 'Production Server'
 
-security:                                             # global security
+security:                                             # Global security
   - BearerAuth: []
 
-components:                                           # reusable components
-  schemas:                                            # structures
+components:                                           # Reusable components
+  schemas:                                            # Structures
     Error:
       description: 'Standard error'
       type: object
@@ -34,47 +34,73 @@ components:                                           # reusable components
           maxLength: 500
           readOnly: true
       required: [code, message]
-      additionalProperties: false                     # no other properties allowed
+      additionalProperties: false                     # No other properties allowed
       example:
         code: 404
         message: 'The requested resource could not be found'
+
+
+    Emoji:
+      description: 'The emoji character exactly one symbol'
+      type: string
+      pattern: '^.{1,16}$'                            # 1 symbol, at most 16 code points
+      minLength: 1
+      maxLength: 16
+      example: '👍'
+
+
+    Id:
+      description: 'Standard unique identifier, only the canonical lowercase form is valid'
+      type: string
+      format: uuid                                    # Universally Unique Identifier
+      pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      minLength: 36
+      maxLength: 36
+      example: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
+
+    PhotoId:
+      $ref: '#/components/schemas/Id'
+
+    UserId:
+      $ref: '#/components/schemas/Id'
+
+    ChatId:
+      $ref: '#/components/schemas/Id'
+
+    MessageId:
+      $ref: '#/components/schemas/Id'
+
+    CommentId:
+      $ref: '#/components/schemas/Id'
+
 
     Photo:
       description: 'Binary photo file'
       type: string
       format: binary
-      pattern: '^.*$'                                 # any binary content
+      pattern: '^.*$'                                 # Any binary content
       minLength: 1
       maxLength: 31457280                             # 30 Megabyte (30 * 1024 * 1024)
-      example: 'mercuriLorenzo.png'
+      example: 'the raw bytes of the photo'
 
     PhotoURL:
-      description: 'Photo URL'
+      description: |
+        Photo URL,
+        the last segment is the id of the photo: a UUID saved with no extension,
+        the content type is detected when the photo is served
       type: string
       format: url
-      pattern: '^.{4,300}$'                           # 4-300 chars
+      pattern: '^.{4,100}$'                           # 4-100 chars
       minLength: 4
-      maxLength: 300
+      maxLength: 100
       readOnly: true
-      example: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
+      example: 'https://api.wasatext.com/photos/c56a4180-65aa-42ec-a945-5fd21dec0538'
 
-    Id:
-      description: 'Standard unique identifier'
-      type: string
-      format: uuid                                    # Universally Unique Identifier
-      pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-      minLength: 36
-      maxLength: 36
-      example: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
-
-    UserId:
-      allOf:
-        - $ref: '#/components/schemas/Id'
 
     Username:
       description: 'Standard username, without white spaces'
       type: string
-      pattern: '^[a-zA-Z0-9_.-]+$'                    # alphanumeric
+      pattern: '^[a-zA-Z0-9_.-]+$'                    # Alphanumeric
       minLength: 1
       maxLength: 30
       example: 'MercuriLorenzo'
@@ -83,164 +109,27 @@ components:                                           # reusable components
       description: 'Standard user'
       type: object
       properties:
-        id:                                           # only doLogin returns user id
-          allOf:
-            - $ref: '#/components/schemas/UserId'
-            - readOnly: true
+        id:                                           # Only doLogin returns user id
+          $ref: '#/components/schemas/UserId'
         username:
-          allOf:
-            - $ref: '#/components/schemas/Username'
-            - readOnly: true
+          $ref: '#/components/schemas/Username'
         photo:
           $ref: '#/components/schemas/PhotoURL'
-      required: [username, photo]
-      readOnly: true
-      additionalProperties: false                     # no other properties allowed
+      required: [id, username, photo]
+      additionalProperties: false                     # No other properties allowed
 
-    MessageBase:
-      description: 'Base structure for messages and snippets'
-      type: object
-      properties:
-        date:
-          description: 'Message creation date'
-          type: string
-          format: date-time
-          pattern: '^.{20,60}$'                          # chars as date format YYYY-MM-DDTHH:MM:SSZ + extra complex
-          minLength: 20
-          maxLength: 60
-          readOnly: true
-          example: '2025-11-04T10:32:00Z'
-        user:
-          allOf:
-            - $ref: '#/components/schemas/UserId'
-            - readOnly: true
-        state:
-          description: |
-            Message state,
-            received: message received by all chat members,
-            read: message read by all chat members
-          type: string
-          pattern: '^.{4,8}$'                         # 4-8 chars as 'read' or 'received'
-          minLength: 4
-          maxLength: 8
-          enum: [received, read]
-          readOnly: true
-          example: 'read'
-          # EXTRA: sent: message sent by the user but not received yet by all chat members
-      required: [date, user, state]
-
-    MessageId:
-      allOf:
-        - $ref: '#/components/schemas/Id'
-        - readOnly: true
-      
-    MessageText:
-      description: 'Standard message text content'
-      type: string
-      pattern: '^.{1,10000}$'                         # 1-10000 chars
-      minLength: 1
-      maxLength: 10000
-      example: 'Hello world!'
-
-    Message:
-      description: 'Standard message'
-      allOf:                                          # combines MessageBase with the modifications below
-        - $ref: '#/components/schemas/MessageBase'    # inherit everything from MessageBase
-        - type: object                                # override type to object
-          properties:
-            id:
-              $ref: '#/components/schemas/MessageId'
-            content:
-              description: 'Content of the message, text and/or photo'
-              type: object
-              properties:
-                text:
-                  $ref: '#/components/schemas/MessageText'
-                photo:
-                  $ref: '#/components/schemas/PhotoURL'
-              minProperties: 1                        # at least one of text/photo is present
-          required: [id, content]                     # + date, user, state already required in MessageBase
-
-    Emoji:
-      description: 'The emoji character'
-      type: string
-      pattern: '^.{1,8}$'                         # emoji can be more than 1 char
-      minLength: 1
-      maxLength: 8
-      example: '👍'
-      
-    SnippetId:
-      allOf:
-        - $ref: '#/components/schemas/Id'
-        - readOnly: true
-
-    Snippet:
-      description: 'Standard snippet of a message'
-      allOf:                                          # combines MessageBase with the modifications below
-        - $ref: '#/components/schemas/MessageBase'    # inherit everything from MessageBase
-        - type: object                                # override type to object
-          properties:
-            id:
-              $ref: '#/components/schemas/SnippetId'
-            content:
-              description: |
-                Summary of the content of a message,
-                text summary or emoji representing the media
-              type: object
-              properties:
-                text:
-                  allOf:
-                    - $ref: '#/components/schemas/MessageText'
-                    - maxLength: 50                   # example: first 50 chars of the message
-                emoji:
-                  $ref: '#/components/schemas/Emoji'
-              minProperties: 1                        # at least one of text/emoji is present
-          required: [id, content]                     # + date, user, state already required in MessageBase
-
-    CommentId:
-      allOf:
-        - $ref: '#/components/schemas/Id'
-        - readOnly: true
-
-    Comment:
-      description: 'Standard comment to a message'
-      type: object
-      properties:
-        id:
-          $ref: '#/components/schemas/CommentId'
-        emoji:
-          $ref: '#/components/schemas/Emoji'
-        user:
-          allOf:
-            - $ref: '#/components/schemas/UserId'
-            - readOnly: true
-      required: [id, emoji, user]
-      additionalProperties: false                     # no other properties allowed
-
-    ChatId:
-      allOf:
-        - $ref: '#/components/schemas/Id'
-        - readOnly: true
     
-    ChatSummary:                                      # generic chat summary schema
-      description: 'Standard chat summary, without full messages list, private chat or group chat'
+    ChatSummary:                                      # Generic chat summary schema
+      description: |
+        Standard chat summary, one element of the chats list of the homepage:
+        no members and no messages, the list only draws name, photo and snippet
       type: object
       properties:
         id:
           $ref: '#/components/schemas/ChatId'
-        members:
-          description: 'Members of the chat'
-          type: array
-          items:
-            $ref: '#/components/schemas/UserId'
-          minItems: 0
-          maxItems: 100
-          uniqueItems: true                           # ensure that each member could be once in the members list
-        snippet:
-          allOf:
-            - $ref: '#/components/schemas/Snippet'
-            - readOnly: true
-      required: [id, members]
+        snippet:                                      # Absent while the chat has no messages
+          $ref: '#/components/schemas/Snippet'
+      required: [id]
 
     GroupName:
       description: 'Standard group name'
@@ -252,9 +141,9 @@ components:                                           # reusable components
 
     GroupSummary:
       description: 'Standard group chat summary, without full messages list'
-      allOf:                                          # combines ChatSummary with the modifications below
-        - $ref: '#/components/schemas/ChatSummary'    # inherit everything from ChatSummary
-        - type: object                                # override type to object
+      allOf:                                          # Combines ChatSummary with the modifications below
+        - $ref: '#/components/schemas/ChatSummary'    # Inherit everything from ChatSummary
+        - type: object                                # Override type to object
           properties:
             chatType:
               description: 'Chat type'
@@ -269,14 +158,22 @@ components:                                           # reusable components
               $ref: '#/components/schemas/GroupName'
             photo:
               $ref: '#/components/schemas/PhotoURL'
-      required: [chatType, name, photo]               # + id, members already required in ChatSummary
+      required: [chatType, name, photo]               # + id already required in ChatSummary
 
     GroupDetail:
-      description: 'Standard group chat with full messages list'
-      allOf:                                          # combines GroupSummary with the modifications below
-        - $ref: '#/components/schemas/GroupSummary'   # inherit everything from GroupSummary
-        - type: object                                # override type to object
+      description: 'Standard group chat, with the members and the full messages list'
+      allOf:                                          # Combines GroupSummary with the modifications below
+        - $ref: '#/components/schemas/GroupSummary'   # Inherit everything from GroupSummary
+        - type: object                                # Override type to object
           properties:
+            members:
+              description: 'Members of the group'
+              type: array
+              items:
+                $ref: '#/components/schemas/UserId'
+              minItems: 1                             # A group that everybody left still has one member
+              maxItems: 100
+              uniqueItems: true                       # Ensure that each member could be once in the members list
             messages:
               description: 'List of all messages in the group chat'
               type: array
@@ -284,13 +181,13 @@ components:                                           # reusable components
                 $ref: '#/components/schemas/Message'
               minItems: 0
               maxItems: 100000
-          # id, members, chatType, name, photo already required in GroupSummary
+          required: [members, messages]               # + id, chatType, name, photo already required in GroupSummary
 
     PrivateChatSummary:
-      description: 'Standard private chat summary, without full messages list'
-      allOf:                                          # combines ChatSummary with the modifications below
-        - $ref: '#/components/schemas/ChatSummary'    # inherit everything from ChatSummary
-        - type: object                                # override type to object
+      description: 'Standard private chat summary, without members and full messages list'
+      allOf:                                          # Combines ChatSummary with the modifications below
+        - $ref: '#/components/schemas/ChatSummary'    # Inherit everything from ChatSummary
+        - type: object                                # Override type to object
           properties:
             chatType:
               description: 'Chat type'
@@ -301,6 +198,18 @@ components:                                           # reusable components
               enum: ['private']
               readOnly: true
               example: 'private'
+            name:                                     # The other user username
+              $ref: '#/components/schemas/Username'
+            photo:                                    # The other user photo
+              $ref: '#/components/schemas/PhotoURL'
+      required: [chatType, name, photo]               # + id already required in ChatSummary
+
+    PrivateChatDetail:
+      description: 'Standard private chat, with the members and the full messages list'
+      allOf:                                          # Combines PrivateChatSummary with the modifications below
+        - $ref: '#/components/schemas/PrivateChatSummary' # Inherit everything from PrivateChatSummary
+        - type: object                                # Override type to object
+          properties:
             members:
               description: 'The two members of the private chat'
               type: array
@@ -308,23 +217,7 @@ components:                                           # reusable components
                 $ref: '#/components/schemas/UserId'
               minItems: 2
               maxItems: 2
-              readOnly: true
-            name:                                     # the other user username
-              allOf:
-                - $ref: '#/components/schemas/Username'
-                - readOnly: true
-            photo:                                    # the other user photo
-              allOf:
-                - $ref: '#/components/schemas/PhotoURL'
-                - readOnly: true
-      required: [chatType, name, photo]               # + members already required in ChatSummary
-
-    PrivateChatDetail:
-      description: 'Standard private chat with full messages list'
-      allOf:                                          # combines PrivateChatSummary with the modifications below
-        - $ref: '#/components/schemas/PrivateChatSummary' # inherit everything from PrivateChatSummary
-        - type: object                                # override type to object
-          properties:
+              uniqueItems: true                       # Ensure that each member could be once in the members list
             messages:
               description: 'List of all messages in the private chat'
               type: array
@@ -332,9 +225,106 @@ components:                                           # reusable components
                 $ref: '#/components/schemas/Message'
               minItems: 0
               maxItems: 100000
-      # id, members, chatType, name, photo already required in PrivateChatSummary
+          required: [members, messages]               # + id, chatType, name, photo already required in PrivateChatSummary
 
-  securitySchemes:                                    # authentication
+
+    MessageBase:
+      description: 'Base structure for messages and snippets'
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/MessageId'
+        date:
+          description: 'Message creation date'
+          type: string
+          format: date-time
+          pattern: '^.{20,60}$'                          # Chars as date format YYYY-MM-DDTHH:MM:SSZ + extra complex
+          minLength: 20
+          maxLength: 60
+          example: '2025-11-04T10:32:00Z'
+        user:
+          $ref: '#/components/schemas/UserId'
+        state:
+          description: |
+            Message state,
+            received: message received by all chat members,
+            read: message read by all chat members
+          type: string
+          pattern: '^.{4,8}$'                         # 4-8 chars as 'read' or 'received'
+          minLength: 4
+          maxLength: 8
+          enum: [received, read]
+          example: 'read'
+          # EXTRA: sent: message sent by the user but not received yet by all chat members
+      required: [id, date, user, state]
+      
+    MessageText:
+      description: 'Standard message text content'
+      type: string
+      pattern: '^.{1,10000}$'                         # 1-10000 chars
+      minLength: 1
+      maxLength: 10000
+      example: 'Hello world!'
+
+    Message:
+      description: 'Standard message'
+      allOf:                                          # Combines MessageBase with the modifications below
+        - $ref: '#/components/schemas/MessageBase'    # Inherit everything from MessageBase
+        - type: object                                # Override type to object
+          properties:
+            content:
+              description: 'Content of the message, text and/or photo'
+              type: object
+              properties:
+                text:
+                  $ref: '#/components/schemas/MessageText'
+                photo:
+                  $ref: '#/components/schemas/PhotoURL'
+              minProperties: 1                        # At least one of text/photo is present
+            comments:
+              description: 'The reactions on this message, empty list if none'
+              type: array
+              items:
+                $ref: '#/components/schemas/Comment'
+              minItems: 0
+              maxItems: 1000
+              uniqueItems: true                       # One comment per user, and one id per comment
+          required: [content, comments]               # + id, date, user, state already required in MessageBase
+
+    Snippet:
+      description: 'Standard snippet of a message'
+      allOf:                                          # Combines MessageBase with the modifications below
+        - $ref: '#/components/schemas/MessageBase'    # Inherit everything from MessageBase
+        - type: object                                # Override type to object
+          properties:
+            content:
+              description: 'Summary of the content of a message, text summary or emoji representing the media'
+              type: object
+              properties:
+                text:
+                  allOf:
+                    - $ref: '#/components/schemas/MessageText'
+                    - maxLength: 50                   # First 50 chars of the message
+                emoji:
+                  $ref: '#/components/schemas/Emoji'
+              minProperties: 1                        # At least one of text/emoji is present
+          required: [content]                         # + id (the message this snippet previews), date, user, state already required in MessageBase
+
+    Comment:
+      description: 'Standard comment to a message'
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/CommentId'
+        user:
+          $ref: '#/components/schemas/UserId'
+        emoji:
+          $ref: '#/components/schemas/Emoji'
+      required: [id, user, emoji]
+      additionalProperties: false                     # No other properties allowed
+
+
+  securitySchemes:                                    # Authentication
     BearerAuth:
       description: 'Authentication token (JWT)'       # JSON Web Token
       type: http
@@ -730,7 +720,6 @@ paths:                                                # rest endpoints
                 chats:
                   - id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
                     chatType: 'private'
-                    members: ['126a4180-65aa-42ec-a945-5fd21dec0538', 'cf6a4180-65aa-42ec-a945-5fd21dec0538']
                     # Alice's POV
                     name: 'Bob'
                     photo: 'https://api.wasatext.com/photos/bob.png'
@@ -744,7 +733,6 @@ paths:                                                # rest endpoints
                       state: 'read'
                   - id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
                     chatType: 'group'
-                    members: ['cf6ad480-65aa-42ec-a945-5fd21dec0538', 'cf6a4da0-65aa-42ec-a945-5fd21dec0538', 'ab6a4180-65aa-42ec-a945-5fd21dec0538']
                     name: 'Weekend Trip'
                     photo: 'https://api.wasatext.com/photos/trip.png'
                     snippet:
@@ -805,6 +793,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-15T18:30:00Z'
                     user: 'c23a4180-65aa-42ec-a945-5fd21dec0538'
                     state: 'read'
+                    comments: []
                   - id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
                     content:
                       text: 'I will be there in 5 minutes.'
@@ -812,6 +801,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-15T18:35:00Z'
                     user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                     state: 'received'
+                    comments: []
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -865,6 +855,7 @@ paths:                                                # rest endpoints
                 date: '2025-11-15T18:45:00Z'
                 user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                 state: 'received'
+                comments: []
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -916,6 +907,7 @@ paths:                                                # rest endpoints
                 date: '2025-11-15T19:00:00Z'
                 user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                 state: 'received'
+                comments: []
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1001,7 +993,12 @@ paths:                                                # rest endpoints
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Comment'
+              description: 'Object containing the emoji of the comment'
+              type: object                            # not a Comment: id and user are readOnly,
+              properties:                             # the server knows both and the client cannot send them
+                emoji:
+                  $ref: '#/components/schemas/Emoji'
+              required: [emoji]
         required: true
       responses:
         '200':
@@ -1097,6 +1094,7 @@ paths:                                                # rest endpoints
                 date: '2025-11-15T18:45:00.123Z'
                 user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                 state: 'read'
+                comments: []
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1122,7 +1120,7 @@ paths:                                                # rest endpoints
       summary: 'Create a new private chat or get the existing one'
       tags: ['PrivateChat']
       requestBody:
-        description: 'Username of the other user to create the private chat with'
+        description: 'UserId of the other user to create the private chat with'
         content:
           application/json:
             schema:
@@ -1162,6 +1160,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-15T18:30:00Z'
                     user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                     state: 'read'
+                    comments: []
                   - id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
                     content:
                       text: 'I will be there in 5 minutes.'
@@ -1169,6 +1168,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-15T18:35:00Z'
                     user: '786a4180-65aa-42ec-a945-5fd21dec0538'
                     state: 'received'
+                    comments: []
         '201':
           description: 'Private chat created successfully'
           content:
@@ -1217,12 +1217,15 @@ paths:                                                # rest endpoints
                     name:
                       $ref: '#/components/schemas/GroupName'
                     members:
-                      description: 'List of the UserId of the initial members of the group'
+                      description: |
+                        List of the UserId of the initial members of the group,
+                        the creator is already inside this list, so it is the whole group
                       type: array
                       items:
                         $ref: '#/components/schemas/UserId'
-                      minItems: 2
+                      minItems: 2                     # the creator plus at least one other member
                       maxItems: 100
+                      uniqueItems: true               # ensure that each member could be once in the members list
                   required: [name, members]
                 photoFile:
                   $ref: '#/components/schemas/Photo'
@@ -1259,6 +1262,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-15T18:55:00Z'
                     user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'read'
+                    comments: []
                   - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     content:
                       text: 'Meeting moved to Friday.'
@@ -1266,6 +1270,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-15T19:00:00Z'
                     user: 'cab2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'received'
+                    comments: []
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1328,6 +1333,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-10T09:00:00Z'
                     user: '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'read'
+                    comments: []
                   - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
                     content:
                       text: 'The exam is next Monday at 9 AM.'
@@ -1335,6 +1341,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-10T09:05:00Z'
                     user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'received'
+                    comments: []
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1400,6 +1407,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-10T09:00:00Z'
                     user: '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'read'
+                    comments: []
                   - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
                     content:
                       text: 'The exam is next Monday at 9 AM.'
@@ -1407,6 +1415,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-10T09:05:00Z'
                     user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'received'
+                    comments: []
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1435,7 +1444,7 @@ paths:                                                # rest endpoints
       parameters:
         - $ref: '#/components/parameters/ParamChatId'
       requestBody:
-        description: 'List of the usernames of the new members to add to the group'
+        description: 'List of the UserId of the new members to add to the group'
         content:
           application/json:
             schema:
@@ -1447,8 +1456,9 @@ paths:                                                # rest endpoints
                   type: array
                   items:
                     $ref: '#/components/schemas/UserId'
-                  minItems: 1
+                  minItems: 0                             # an empty list is a request that adds nobody
                   maxItems: 100                           # better: group max size - group current size
+                  uniqueItems: true                       # ensure that each member could be once in the members list
         required: true
       responses:
         '200':
@@ -1478,6 +1488,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-10T09:00:00Z'
                     user: '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'read'
+                    comments: []
                   - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
                     content:
                       text: 'The exam is next Monday at 9 AM.'
@@ -1485,6 +1496,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-10T09:05:00Z'
                     user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'received'
+                    comments: []
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1538,6 +1550,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-10T09:00:00Z'
                     user: '80b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'read'
+                    comments: []
                   - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
                     content:
                       text: 'The exam is next Monday at 9 AM.'
@@ -1545,6 +1558,7 @@ paths:                                                # rest endpoints
                     date: '2025-11-10T09:05:00Z'
                     user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                     state: 'received'
+                    comments: []
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

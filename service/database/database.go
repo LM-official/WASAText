@@ -45,13 +45,10 @@ import (
 
 // AppDatabase is the high level interface for the DB
 type AppDatabase interface {
-	GetName() (string, error)
-	SetName(name string) error
-
 	// my methods
 	DoLogin(username schemas.Username) (schemas.UserId, bool, error)
 	SetMyUserName(userId schemas.UserId, newUsername schemas.Username) (schemas.User, error)
-	SearchUsers(username schemas.Username) ([]schemas.User, error)
+	GetUsers(username schemas.Username) ([]schemas.User, error)
 
 	// my helpers
 	UserExists(userId schemas.UserId) (bool, error)

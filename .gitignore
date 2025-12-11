@@ -14,3 +14,8 @@ docker-compose.log
 
 .vscode/*
 !.vscode/extensions.json
+
+# MY IGNORES
+db/wasatext.db
+tests.txt
+doc/link.txt
