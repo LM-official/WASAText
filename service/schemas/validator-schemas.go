@@ -14,6 +14,25 @@ import (
 	"github.com/rivo/uniseg"
 )
 
+// ---------- ERROR ----------
+// Returns error if the Error does not meets the rules, otherwise nil
+func (e *Error) IsValid() error {
+	if e == nil {
+		return errors.New("error is nil")
+	}
+
+	if e.Code < 100 || e.Code > 599 {
+		return fmt.Errorf("invalid error code: %d; must be between 100 and 599", e.Code)
+	}
+
+	// An empty message is allowed: the status code alone already says what happened
+	if n := CountChars(e.Message); n > 500 {
+		return fmt.Errorf("invalid error message length: %d; must be at most 500 characters", n)
+	}
+
+	return nil
+}
+
 // ---------- BASE TYPES ----------
 // ---------- ID ----------
 // Returns error if the Id is not a well formed UUID, otherwise nil
@@ -107,11 +126,8 @@ func (u *User) IsValid() error {
 		return errors.New("user is nil")
 	}
 
-	// The Id is returned only by doLogin: check it only when it is set
-	if u.Id != "" {
-		if err := u.Id.IsValid(); err != nil {
-			return err
-		}
+	if err := u.Id.IsValid(); err != nil {
+		return err
 	}
 
 	if err := u.Username.IsValid(); err != nil {

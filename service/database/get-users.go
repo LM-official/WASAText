@@ -1,31 +1,41 @@
 package database
 
 import (
+	"strings"
+
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 )
 
-func (db *appdbimpl) GetUsers(username schemas.Username) ([]schemas.User, error) {
-	results := make([]schemas.User, 0)
+// `%` and `_` are LIKE wildcards, and `_` is a legal username character:
+// without escaping, the prefix "a_b" would also match "axb"
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
-	rows, err := db.c.Query(`SELECT username, photo FROM users WHERE username LIKE ? LIMIT 20`, username+"%")
+// GetUsers returns the users whose username starts with the given prefix
+func (db *appdbimpl) GetUsers(username schemas.Username) (schemas.Users, error) {
+	results := make(schemas.Users, 0)
+
+	prefix := likeEscaper.Replace(string(username)) + "%"
+	rows, err := db.c.Query(`SELECT id, username, photo FROM users WHERE username LIKE ? ESCAPE '\' LIMIT 20`, prefix)
 	if err != nil {
-		// query error
-		return results, err
+		// Query error
+		return nil, err
 	}
-	// close rows when done even in case of error
+	// Close rows when done even in case of error
 	defer rows.Close()
 
 	for rows.Next() {
 		var u schemas.User
-		if err := rows.Scan(&u.Username, &u.Photo); err == nil {
-			// append to results
-			results = append(results, u)
+		if err := rows.Scan(&u.Id, &u.Username, &u.Photo); err != nil {
+			// Error reading a row: a shorter list would be a wrong answer, not a partial one
+			return nil, err
 		}
-		// error reading row, row skipped
+
+		// Append to results
+		results = append(results, u)
 	}
-	if err = rows.Err(); err != nil {
-		// error during rows iteration
-		return results, err
+	if err := rows.Err(); err != nil {
+		// Error during rows iteration
+		return nil, err
 	}
 
 	return results, nil

@@ -109,7 +109,7 @@ components:                                           # Reusable components
       description: 'Standard user'
       type: object
       properties:
-        id:                                           # Only doLogin returns user id
+        id:
           $ref: '#/components/schemas/UserId'
         username:
           $ref: '#/components/schemas/Username'
@@ -500,8 +500,8 @@ tags:
     description: 'Manage group chats with multiple users'
 
 
-paths:                                                # rest endpoints
-  # login endpoints
+paths:                                                # Rest endpoints
+  # Login endpoints
   /session:
     post:
       operationId: 'doLogin'
@@ -510,7 +510,7 @@ paths:                                                # rest endpoints
         If the username is new, the user is registered and logged in
       summary: 'User login or registration'
       tags: ['Login']
-      security: []                                    # exclude this endpoint from authentication
+      security: []                                    # Exclude this endpoint from authentication
       requestBody:
         description: 'User username for login'
         content:
@@ -523,7 +523,7 @@ paths:                                                # rest endpoints
                   $ref: '#/components/schemas/Username'
               required: [username]
         required: true
-      responses:  
+      responses:
         '200':
           description: 'User successfully logged in'
           content:
@@ -534,6 +534,8 @@ paths:                                                # rest endpoints
                 properties:
                   id:
                     $ref: '#/components/schemas/UserId'
+                required: [id]
+                additionalProperties: false           # No other properties allowed
               example:
                 id: '126a4180-65aa-42ec-a945-5fd21dec0538'
         '201':
@@ -546,24 +548,23 @@ paths:                                                # rest endpoints
                 properties:
                   id:
                     $ref: '#/components/schemas/UserId'
+                required: [id]
+                additionalProperties: false           # No other properties allowed
               example:
                 id: '126a4180-65aa-42ec-a945-5fd21dec0538'
         '400':
           $ref: '#/components/responses/BadRequest'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
 
-  # user endpoints
+  # User endpoints
   /me/username:
     patch:
       operationId: 'setMyUserName'
-      description: 'Updates the username of the authenticated user'
+      description: |
+        Updates the username of the authenticated user.
+        A username belongs to one user only:
+        asking for one that is already taken is a bad request, not a conflict
       summary: 'Update a user username'
       tags: ['User']
       requestBody:
@@ -576,6 +577,8 @@ paths:                                                # rest endpoints
               properties:
                 username:
                   $ref: '#/components/schemas/Username'
+              required: [username]
+              additionalProperties: false             # No other properties allowed
         required: true
       responses:
         '200':
@@ -585,22 +588,15 @@ paths:                                                # rest endpoints
               schema:
                 $ref: '#/components/schemas/User'
               example:
+                id: '126a4180-65aa-42ec-a945-5fd21dec0538'
                 username: 'NewMercuriLorenzo'
                 photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
 
   /me/photo:
     patch:
@@ -649,8 +645,10 @@ paths:                                                # rest endpoints
   /users:
     get:
       operationId: 'getUsers'
-      description: 'Retrieves user profile information by username prefix'
-      summary: 'Get user by username prefix'
+      description: |
+        Retrieves the users whose username starts with the given prefix.
+        A prefix that matches nobody is a 404, so a 200 always carries at least one user
+      summary: 'Get users by username prefix'
       tags: ['User']
       parameters:
         - $ref: '#/components/parameters/ParamUsername'
@@ -664,17 +662,22 @@ paths:                                                # rest endpoints
                 type: object
                 properties:
                   users:
-                    description: 'List of user users'
+                    description: 'List of the matching users'
                     type: array
                     items:
                       $ref: '#/components/schemas/User'
-                    minItems: 0
-                    maxItems: 100
+                    minItems: 1                       # An empty list is a 404
+                    maxItems: 20                      # The query is capped at 20 rows
+                    uniqueItems: true                 # A username belongs to one user only
+                required: [users]
+                additionalProperties: false           # No other properties allowed
               example:
                 users:
-                  - username: 'MercuriLorenzo'
+                  - id: '126a4180-65aa-42ec-a945-5fd21dec0538'
+                    username: 'MercuriLorenzo'
                     photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
-                  - username: 'MercuriLorenzo123'
+                  - id: '2f8b1c34-9d2e-4a71-b6c5-0e13f7a89b42'
+                    username: 'MercuriLorenzo123'
                     photo: 'https://api.wasatext.com/photos/mercuriLorenzo123.png'
         '400':
           $ref: '#/components/responses/BadRequest'
@@ -684,12 +687,6 @@ paths:                                                # rest endpoints
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
 
   # chat endpoints
   /chats:

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/MercuriLorenzo/WASAText/service/api/reqcontext"
@@ -9,42 +8,30 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
+// DoLogin logs in the user of the given username, registering it first if the username is new
 func (rt *_router) doLogin(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
-	// parse request body
+	// Parse and check the request body
 	var req schemas.UsernameRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		ctx.Logger.WithError(err).Error("bad request body")
-		w.WriteHeader(http.StatusBadRequest)
+	if err := decodeAndValidate(r, &req); err != nil {
+		writeError(w, ctx, http.StatusBadRequest, "invalid request body", err)
 		return
 	}
 
-	if err := req.IsValid(); err != nil {
-		// invalid input
-		ctx.Logger.WithError(err).Error("bad request body")
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	// query
+	// !uery
 	id, found, err := rt.db.DoLogin(req.Username)
 	if err != nil {
-		// error during query
-		ctx.Logger.WithError(err).Error("login failed")
-		w.WriteHeader(http.StatusInternalServerError)
+		writeError(w, ctx, http.StatusInternalServerError, "login failed", err)
 		return
 	}
 
-	// response
-	w.Header().Set("Content-Type", "application/json")
-
+	// An existing user is only logged in, a new one is registered first
+	code := http.StatusCreated
 	if found {
-		w.WriteHeader(http.StatusOK)
-	} else {
-		w.WriteHeader(http.StatusCreated)
+		code = http.StatusOK
 	}
 
-	// wrap id in object
-	_ = json.NewEncoder(w).Encode(struct {
+	// Response
+	writeJSON(w, ctx, code, struct {
 		Id schemas.UserId `json:"id"`
-	}{id})
+	}{Id: id})
 }

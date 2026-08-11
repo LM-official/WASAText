@@ -10,47 +10,50 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
-// private type for httprouter handler with context
+// Private key type, so that no other package can read or overwrite the value stored under it
 type contextKey string
 
 const keyUserId contextKey = "UserId"
 
-// authenticate verifica il token e lo inietta nel context standard della request
+// Authenticate checks the token of the request and injects the userId in the standard context of the request
+// The token is the userId itself: this project is about the API design, not about security
 func (rt *_router) authenticate(next httpRouterHandler) httpRouterHandler {
 	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
-		// get the token from the Authorization header
+		// Get the token from the Authorization header
 		authHeader := r.Header.Get("Authorization")
 		if !strings.HasPrefix(authHeader, "Bearer ") {
-			w.WriteHeader(http.StatusUnauthorized)
+			writeError(w, ctx, http.StatusUnauthorized, "missing bearer token", nil)
 			return
 		}
 		userId := schemas.UserId(strings.TrimPrefix(authHeader, "Bearer "))
 
 		if err := userId.IsValid(); err != nil {
-			// invalid userId format
-			ctx.Logger.WithError(err).Error("invalid token format")
-			w.WriteHeader(http.StatusUnauthorized)
+			// Invalid userId format
+			writeError(w, ctx, http.StatusUnauthorized, "invalid token format", err)
 			return
 		}
 
 		exists, err := rt.db.UserExists(userId)
 		if err != nil {
-			// error in database check
-			ctx.Logger.WithError(err).Error("database user search failed during authentication")
-			w.WriteHeader(http.StatusInternalServerError)
+			// Error in database check
+			writeError(w, ctx, http.StatusInternalServerError, "cannot verify the token", err)
 			return
 		}
 		if !exists {
-			// user not found
-			ctx.Logger.WithError(err).Error("user not found during authentication")
-			w.WriteHeader(http.StatusUnauthorized)
+			// No user owns this token
+			writeError(w, ctx, http.StatusUnauthorized, "unknown token", nil)
 			return
 		}
 
-		// add userID to the context
+		// Add the userId to the context, and call the next handler with the new context
 		newCtx := context.WithValue(r.Context(), keyUserId, userId)
-
-		// call the next handler with the new context
 		next(w, r.WithContext(newCtx), ps, ctx)
 	}
+}
+
+// userIdFromContext returns the userId that authenticate injected in the request
+// The second value is false when the handler was registered without authenticate
+func userIdFromContext(r *http.Request) (schemas.UserId, bool) {
+	userId, ok := r.Context().Value(keyUserId).(schemas.UserId)
+	return userId, ok
 }

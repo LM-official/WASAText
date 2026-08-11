@@ -45,12 +45,12 @@ import (
 
 // AppDatabase is the high level interface for the DB
 type AppDatabase interface {
-	// my methods
+	// My methods
 	DoLogin(username schemas.Username) (schemas.UserId, bool, error)
 	SetMyUserName(userId schemas.UserId, newUsername schemas.Username) (schemas.User, error)
-	GetUsers(username schemas.Username) ([]schemas.User, error)
+	GetUsers(username schemas.Username) (schemas.Users, error)
 
-	// my helpers
+	// My helpers
 	UserExists(userId schemas.UserId) (bool, error)
 	Ping() error
 }

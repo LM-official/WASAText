@@ -8,7 +8,12 @@ package schemas
 import "time"
 
 // ---------- ERROR ----------
-// Omitted, used base net/http Error struct
+// No table: an error is built by the api layer when a request fails, and never stored
+// It is the body of every 4xx and 5xx response of doc/api.yaml
+type Error struct {
+	Code    int    `json:"code"`    // The HTTP status code of the response
+	Message string `json:"message"` // Why the request failed
+}
 
 // ---------- BASE TYPES ----------
 // ---------- EMOJI ----------
@@ -35,7 +40,7 @@ type PhotoURL string
 // Table: users (id, username, photo)
 type Username string
 type User struct {
-	Id       UserId   `json:"id,omitempty"` // only doLogin returns the Id
+	Id       UserId   `json:"id"`
 	Username Username `json:"username"`
 	Photo    PhotoURL `json:"photo"`
 }
@@ -123,8 +128,8 @@ type SnippetContent struct {
 	Emoji Emoji       `json:"emoji,omitempty"` // Stands for the media of the message (e.g. 📷)
 }
 type Snippet struct {
-	MessageBase // The id is message this snippet previews
-	Content SnippetContent `json:"content"`
+	MessageBase                // The id is message this snippet previews
+	Content     SnippetContent `json:"content"`
 }
 
 // ---------- REQUESTS ----------

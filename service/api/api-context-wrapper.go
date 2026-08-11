@@ -28,11 +28,11 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// httpRouterHandler is the signature for functions that accepts a reqcontext.RequestContext in addition to those
-// required by the httprouter package.
+// HttpRouterHandler is the signature for functions that accepts a reqcontext.RequestContext in addition to those
+// Required by the httprouter package
 type httpRouterHandler func(http.ResponseWriter, *http.Request, httprouter.Params, reqcontext.RequestContext)
 
-// wrap parses the request and adds a reqcontext.RequestContext instance related to the request.
+// Wrap parses the request and adds a reqcontext.RequestContext instance related to the request.
 func (rt *_router) wrap(fn httpRouterHandler) func(http.ResponseWriter, *http.Request, httprouter.Params) {
 	return func(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 		reqUUID, err := uuid.NewV4()

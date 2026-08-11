@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/MercuriLorenzo/WASAText/service/api/reqcontext"
@@ -9,35 +8,29 @@ import (
 	"github.com/julienschmidt/httprouter"
 )
 
+// getUsers returns the users whose username starts with the `username` query parameter
 func (rt *_router) getUsers(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
-	// get username from query parameters
+	// Get and check the username prefix from the query parameters
 	username := schemas.Username(r.URL.Query().Get("username"))
 	if err := username.IsValid(); err != nil {
-		// invalid username format
-		ctx.Logger.WithError(err).Error("bad request")
-		w.WriteHeader(http.StatusBadRequest)
+		writeError(w, ctx, http.StatusBadRequest, "invalid username", err)
 		return
 	}
 
-	// query
+	// Query
 	users, err := rt.db.GetUsers(username)
 	if err != nil {
-		// other errors
-		ctx.Logger.WithError(err).Error("database error during user search")
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	if len(users) == 0 {
-		// no users found
-		ctx.Logger.WithError(err).Error("user not found")
-		w.WriteHeader(http.StatusNotFound)
+		writeError(w, ctx, http.StatusInternalServerError, "user search failed", err)
 		return
 	}
 
-	// response
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(struct {
-		Users []schemas.User `json:"users"`
+	if len(users) == 0 {
+		writeError(w, ctx, http.StatusNotFound, "no user matches the given username", nil)
+		return
+	}
+
+	// Response
+	writeJSON(w, ctx, http.StatusOK, struct {
+		Users schemas.Users `json:"users"`
 	}{Users: users})
 }

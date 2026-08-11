@@ -1,58 +1,44 @@
 package api
 
 import (
-	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/MercuriLorenzo/WASAText/service/api/reqcontext"
+	"github.com/MercuriLorenzo/WASAText/service/database"
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 	"github.com/julienschmidt/httprouter"
 )
 
+// setMyUserName updates the username of the authenticated user
 func (rt *_router) setMyUserName(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
-	// get the userId from the context
-	userId, ok := r.Context().Value(keyUserId).(schemas.UserId)
+	// Get the userId that authenticate injected in the request
+	userId, ok := userIdFromContext(r)
 	if !ok {
-		// user not authenticated
-		ctx.Logger.Error("user not authenticated")
-		w.WriteHeader(http.StatusUnauthorized)
+		writeError(w, ctx, http.StatusUnauthorized, "user not authenticated", nil)
 		return
 	}
 
-	// parsing request body
+	// Parse and check the request body
 	var req schemas.UsernameRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		ctx.Logger.WithError(err).Error("bad request body")
-		w.WriteHeader(http.StatusBadRequest)
+	if err := decodeAndValidate(r, &req); err != nil {
+		writeError(w, ctx, http.StatusBadRequest, "invalid request body", err)
 		return
 	}
 
-	if err := req.IsValid(); err != nil {
-		// invalid input
-		ctx.Logger.WithError(err).Error("bad request body")
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	// query
+	// Query
 	user, err := rt.db.SetMyUserName(userId, req.Username)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			// UNIQUE constraint violated
-			ctx.Logger.WithError(err).Error("database failed to update username: unique constraint violated")
-			w.WriteHeader(http.StatusBadRequest)
+		// A username belongs to one user only: asking for a used one is a bad request
+		if errors.Is(err, database.ErrUsernameTaken) {
+			writeError(w, ctx, http.StatusBadRequest, "username already taken", err)
 			return
 		}
 
-		// other error
-		ctx.Logger.WithError(err).Error("database failed to update username")
-		w.WriteHeader(http.StatusInternalServerError)
+		writeError(w, ctx, http.StatusInternalServerError, "cannot update the username", err)
 		return
 	}
 
-	// response
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(user)
+	// Response
+	writeJSON(w, ctx, http.StatusOK, user)
 }
