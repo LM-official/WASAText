@@ -15,13 +15,13 @@ func (db *appdbimpl) GetUsers(username schemas.Username) (schemas.Users, error) 
 	results := make(schemas.Users, 0)
 
 	prefix := likeEscaper.Replace(string(username)) + "%"
-	rows, err := db.c.Query(`SELECT id, username, photo FROM users WHERE username LIKE ? ESCAPE '\' LIMIT 20`, prefix)
+	rows, err := db.c.Query(`SELECT id, username, photoId FROM users WHERE username LIKE ? ESCAPE '\' LIMIT 20;`, prefix)
 	if err != nil {
 		// Query error
 		return nil, err
 	}
 	// Close rows when done even in case of error
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var u schemas.User

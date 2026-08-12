@@ -43,6 +43,7 @@ import (
 	"net/http"
 
 	"github.com/MercuriLorenzo/WASAText/service/database"
+	"github.com/MercuriLorenzo/WASAText/service/photos"
 	"github.com/julienschmidt/httprouter"
 	"github.com/sirupsen/logrus"
 )
@@ -54,6 +55,9 @@ type Config struct {
 
 	// Database is the instance of database.AppDatabase where data are saved
 	Database database.AppDatabase
+
+	// Photos is the instance of photos.Store where the photo files are saved
+	Photos photos.Store
 }
 
 // Router is the package API interface representing an API handler builder
@@ -74,6 +78,9 @@ func New(cfg Config) (Router, error) {
 	if cfg.Database == nil {
 		return nil, errors.New("database is required")
 	}
+	if cfg.Photos == nil {
+		return nil, errors.New("photos store is required")
+	}
 
 	// Create a new router where we will register HTTP endpoints. The server will pass requests to this router to be handled
 	router := httprouter.New()
@@ -84,6 +91,7 @@ func New(cfg Config) (Router, error) {
 		router:     router,
 		baseLogger: cfg.Logger,
 		db:         cfg.Database,
+		photos:     cfg.Photos,
 	}, nil
 }
 
@@ -95,4 +103,6 @@ type _router struct {
 	baseLogger logrus.FieldLogger
 
 	db database.AppDatabase
+
+	photos photos.Store
 }

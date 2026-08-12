@@ -37,6 +37,7 @@ import (
 	"github.com/MercuriLorenzo/WASAText/service/api"
 	"github.com/MercuriLorenzo/WASAText/service/database"
 	"github.com/MercuriLorenzo/WASAText/service/globaltime"
+	"github.com/MercuriLorenzo/WASAText/service/photos"
 	"github.com/ardanlabs/conf"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sirupsen/logrus"
@@ -98,6 +99,14 @@ func run() error {
 		return fmt.Errorf("creating AppDatabase: %w", err)
 	}
 
+	// Start photo storage: the database keeps the id of a photo, this keeps its bytes
+	logger.Println("initializing photo storage")
+	photoStore, err := photos.New(cfg.Photos.Directory)
+	if err != nil {
+		logger.WithError(err).Error("error creating the photos store")
+		return fmt.Errorf("creating the photos store: %w", err)
+	}
+
 	// Start (main) API server
 	logger.Info("initializing API server")
 
@@ -114,6 +123,7 @@ func run() error {
 	apirouter, err := api.New(api.Config{
 		Logger:   logger,
 		Database: db,
+		Photos:   photoStore,
 	})
 	if err != nil {
 		logger.WithError(err).Error("error creating the API server instance")
@@ -135,7 +145,7 @@ func run() error {
 		Addr:              cfg.Web.APIHost,
 		Handler:           router,
 		ReadTimeout:       cfg.Web.ReadTimeout,
-		ReadHeaderTimeout: cfg.Web.ReadTimeout,
+		ReadHeaderTimeout: cfg.Web.ReadHeaderTimeout,
 		WriteTimeout:      cfg.Web.WriteTimeout,
 	}
 

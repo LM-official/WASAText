@@ -15,7 +15,13 @@ docker-compose.log
 .vscode/*
 !.vscode/extensions.json
 
-# MY IGNORES
+# My ignore
+# db
 db/wasatext.db
+db/photos/*
+!db/photos/00000000-0000-4000-8000-000000000000
+!db/photos/.gitkeep
+
+# Miscellaneous
 tests.txt
 doc/link.txt

@@ -33,13 +33,15 @@ func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, e
 		// Error generating the UUID
 		return schemas.UserId(""), false, err
 	}
+	newId := schemas.UserId(newUUID.String())
 
 	// Insert the new user in the database
-	_, err = db.c.Exec(`INSERT INTO users (id, username, photo) VALUES (?, ?, ?)`, newUUID.String(), username, "./db/defaultPhoto.png")
+	// A new user starts with the default photo id
+	_, err = db.c.Exec(`INSERT INTO users (id, username, photoId) VALUES (?, ?, ?);`, newId, username, schemas.DefaultPhotoId)
 	if err != nil {
 		// Error inserting the new user
 		return schemas.UserId(""), false, err
 	}
 
-	return schemas.UserId(newUUID.String()), false, nil
+	return newId, false, nil
 }

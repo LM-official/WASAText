@@ -85,16 +85,15 @@ components:                                           # Reusable components
 
     PhotoURL:
       description: |
-        Photo URL,
-        the last segment is the id of the photo: a UUID saved with no extension,
+        Photo URL, relative to the server: the client already knows the host it is talking to.
+        The last segment is the id of the photo: a UUID saved with no extension,
         the content type is detected when the photo is served
-      type: string
-      format: url
-      pattern: '^.{4,100}$'                           # 4-100 chars
-      minLength: 4
-      maxLength: 100
+      type: string                                    # Relative reference, not a whole URL
+      pattern: '^/photos/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      minLength: 44
+      maxLength: 44
       readOnly: true
-      example: 'https://api.wasatext.com/photos/c56a4180-65aa-42ec-a945-5fd21dec0538'
+      example: '/photos/c56a4180-65aa-42ec-a945-5fd21dec0538'
 
 
     Username:
@@ -332,6 +331,14 @@ components:                                           # Reusable components
       bearerFormat: JWT
 
   parameters:
+    ParamPhotoId:
+      name: photoId
+      description: 'Photo unique identifier'
+      in: path
+      schema:
+        $ref: '#/components/schemas/PhotoId'
+      required: true
+
     ParamUsername:
       name: username
       description: 'Username prefix to search'
@@ -488,12 +495,10 @@ components:                                           # Reusable components
 
 
 tags:
-  - name: 'Login'
-    description: 'User authentication and registration endpoints'
+  - name: 'Photo'
+    description: 'Serve the bytes of the uploaded photos'
   - name: 'User'
-    description: 'User data, retrieve or update'
-  - name: 'Chat'
-    description: 'Manage chats, private chats and groups'
+    description: 'User login, data retrieve and update'
   - name: 'PrivateChat'
     description: 'Manage private chats between two users'
   - name: 'Group'
@@ -509,7 +514,7 @@ paths:                                                # Rest endpoints
         If the username exists, the user is logged in.
         If the username is new, the user is registered and logged in
       summary: 'User login or registration'
-      tags: ['Login']
+      tags: ['User']
       security: []                                    # Exclude this endpoint from authentication
       requestBody:
         description: 'User username for login'
@@ -557,6 +562,62 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+
+  # Photo endpoints
+  /photos/{photoId}:
+    get:
+      operationId: 'getPhoto'
+      description: |
+        Returns the bytes of a photo.
+        Every PhotoURL of this API points here.
+        Any authenticated user may read any photo, the same rule getUsers follows for the users.
+        The bytes of a photo never change, a new upload gets a new id,
+        so a photo can be cached by the client and never fetched again
+      summary: 'Get a photo'
+      tags: ['Photo']
+      parameters:
+        - $ref: '#/components/parameters/ParamPhotoId'
+      responses:
+        '200':
+          description: 'Photo retrieved successfully'
+          headers:
+            Cache-Control:
+              description: |
+                The photo is immutable, so it can be cached forever,
+                but only by the client that asked for it: the reply is behind a token
+              schema:
+                description: 'Caching directive of the photo'
+                type: string
+              example: 'private, max-age=31536000, immutable'
+            X-Content-Type-Options:
+              description: 'The browser must not guess a content type other than the one sent'
+              schema:
+                description: 'Content type sniffing directive'
+                type: string
+              example: 'nosniff'
+          content:                                    # The type is detected from the bytes, only one of these formats
+            image/png:
+              schema:
+                $ref: '#/components/schemas/Photo'
+            image/jpeg:
+              schema:
+                $ref: '#/components/schemas/Photo'
+            image/gif:
+              schema:
+                $ref: '#/components/schemas/Photo'
+            image/webp:
+              schema:
+                $ref: '#/components/schemas/Photo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
   # User endpoints
   /me/username:
     patch:
@@ -590,7 +651,7 @@ paths:                                                # Rest endpoints
               example:
                 id: '126a4180-65aa-42ec-a945-5fd21dec0538'
                 username: 'NewMercuriLorenzo'
-                photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
+                photo: '/photos/d41f8a72-3b6c-4e19-8a52-0c7f5b21e934'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -626,7 +687,7 @@ paths:                                                # Rest endpoints
               example:
                 id: '126a4180-65aa-42ec-a945-5fd21dec0538'
                 username: 'MercuriLorenzo'
-                photo: 'https://api.wasatext.com/photos/newMercuriLorenzo.png'
+                photo: '/photos/7b9d3f21-4c8e-4a55-9f10-2ed6c4b7a318'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -675,10 +736,10 @@ paths:                                                # Rest endpoints
                 users:
                   - id: '126a4180-65aa-42ec-a945-5fd21dec0538'
                     username: 'MercuriLorenzo'
-                    photo: 'https://api.wasatext.com/photos/mercuriLorenzo.png'
+                    photo: '/photos/d41f8a72-3b6c-4e19-8a52-0c7f5b21e934'
                   - id: '2f8b1c34-9d2e-4a71-b6c5-0e13f7a89b42'
                     username: 'MercuriLorenzo123'
-                    photo: 'https://api.wasatext.com/photos/mercuriLorenzo123.png'
+                    photo: '/photos/a5c04e88-1f37-4d62-b083-6e9a12c4df70'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -688,13 +749,14 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  # chat endpoints
+
+  # Chat endpoints
   /chats:
     get:
       operationId: 'getMyConversations'
       description: 'Retrieves a list of all private chats and groups the user belongs to'
       summary: 'Get all user chats'
-      tags: ['Chat']
+      tags: ['PrivateChat', 'Group']
       responses:
         '200':
           description: 'User chats retrieved successfully'
@@ -755,7 +817,7 @@ paths:                                                # Rest endpoints
       operationId: 'getConversation'
       description: 'Retrieves detailed information and the message history of a specific conversation'
       summary: 'Get user chat by chat ID'
-      tags: ['Chat']
+      tags: ['PrivateChat', 'Group']
       parameters:
         - $ref: '#/components/parameters/ParamChatId'
       responses:
@@ -821,7 +883,7 @@ paths:                                                # Rest endpoints
       operationId: 'sendMessage'
       description: 'Sends a new message to a specific chat. Supports text, photo, or both'
       summary: 'Send a new message'
-      tags: ['Chat']
+      tags: ['PrivateChat', 'Group']
       parameters:
         - $ref: '#/components/parameters/ParamChatId'
       requestBody:
@@ -875,7 +937,7 @@ paths:                                                # Rest endpoints
       operationId: 'forwardMessage'
       description: 'Forwards an existing message to the specified chat. The content (text/photo) is copied to a new message'
       summary: 'Forwards a message'
-      tags: ['Chat']
+      tags: ['PrivateChat', 'Group']
       parameters:
         - $ref: '#/components/parameters/ParamChatId'
       requestBody:
@@ -927,7 +989,7 @@ paths:                                                # Rest endpoints
       operationId: 'getMessageComments'
       description: 'Retrieves all comments associated with a specific message'
       summary: 'Get message comments'
-      tags: ['Chat']
+      tags: ['PrivateChat', 'Group']
       parameters:
         - $ref: '#/components/parameters/ParamChatId'
         - $ref: '#/components/parameters/ParamMessageId'
@@ -984,7 +1046,7 @@ paths:                                                # Rest endpoints
         A user can have only one active comment per message.
         If a comment already exists, this operation replaces it with the new emoji.
       summary: 'Comment a message'
-      tags: ['Chat']
+      tags: ['PrivateChat', 'Group']
       requestBody:
         description: 'Payload containing the new single emoji to set as comment'
         content:
@@ -1039,7 +1101,7 @@ paths:                                                # Rest endpoints
       operationId: 'uncommentMessage'
       description: 'Deletes a specific comment on a message. Only the author of the comment can perform this action'
       summary: 'Delete a comment on a message'
-      tags: ['Chat']
+      tags: ['PrivateChat', 'Group']
       responses:
         '200':
           description: 'Comment deleted successfully'
@@ -1073,7 +1135,7 @@ paths:                                                # Rest endpoints
       operationId: 'deleteMessage'
       description: 'Deletes a specific message. Only the author of the message can perform this action'
       summary: 'Delete a message'
-      tags: ['Chat']
+      tags: ['PrivateChat', 'Group']
       parameters:
         - $ref: '#/components/parameters/ParamChatId'
         - $ref: '#/components/parameters/ParamMessageId'

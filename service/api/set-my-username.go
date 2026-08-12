@@ -40,5 +40,5 @@ func (rt *_router) setMyUserName(w http.ResponseWriter, r *http.Request, ps http
 	}
 
 	// Response
-	writeJSON(w, ctx, http.StatusOK, user)
+	writeJSON(w, ctx, http.StatusOK, withPhotoURL(user))
 }

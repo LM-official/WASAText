@@ -18,15 +18,23 @@ type WebAPIConfiguration struct {
 		Path string `conf:"default:/conf/config.yml"`
 	}
 	Web struct {
-		APIHost         string        `conf:"default:0.0.0.0:3000"`
-		DebugHost       string        `conf:"default:0.0.0.0:4000"`
-		ReadTimeout     time.Duration `conf:"default:5s"`
-		WriteTimeout    time.Duration `conf:"default:5s"`
-		ShutdownTimeout time.Duration `conf:"default:5s"`
+		APIHost   string `conf:"default:0.0.0.0:3000"`
+		DebugHost string `conf:"default:0.0.0.0:4000"`
+		// ReadTimeout covers the whole request body, so it has to fit the upload of a photo of MaxPhotoBytes
+		// WriteTimeout has to fit serving one back
+		ReadTimeout time.Duration `conf:"default:60s"`
+		// ReadHeaderTimeout stays short: only the body of a request is allowed to be slow
+		ReadHeaderTimeout time.Duration `conf:"default:5s"`
+		WriteTimeout      time.Duration `conf:"default:60s"`
+		ShutdownTimeout   time.Duration `conf:"default:5s"`
 	}
 	Debug bool
 	DB    struct {
 		Filename string `conf:"default:./db/wasatext.db"`
+	}
+	Photos struct {
+		// Directory is where the bytes of the photos are kept, one file per photo id
+		Directory string `conf:"default:./db/photos"`
 	}
 }
 

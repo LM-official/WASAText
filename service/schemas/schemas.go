@@ -29,12 +29,23 @@ type MessageId string
 type CommentId string
 
 // ---------- PHOTO ----------
-// The same photo has three forms:
+// MaxPhotoBytes is the size limit of any uploaded photo
+const MaxPhotoBytes = 30 << 20 // 31457280 (30 * 1024 * 1024)
+
 // PhotoFile is what the client uploads
 // PhotoURL is what the API returns
 // Only the api layer turns a PhotoId into a PhotoURL
 type PhotoFile []byte
 type PhotoURL string
+
+// DefaultPhotoId is the photo id a new user starts with
+const DefaultPhotoId PhotoId = "00000000-0000-4000-8000-000000000000"
+
+// The URL is relative: the client already knows the host it is talking to,
+// while the server behind a proxy or on another port does not know its own
+func (i PhotoId) URL() PhotoURL {
+	return PhotoURL("/photos/" + i)
+}
 
 // ---------- USER ----------
 // Table: users (id, username, photo)

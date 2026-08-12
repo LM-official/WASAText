@@ -32,5 +32,5 @@ func (rt *_router) getUsers(w http.ResponseWriter, r *http.Request, ps httproute
 	// Response
 	writeJSON(w, ctx, http.StatusOK, struct {
 		Users schemas.Users `json:"users"`
-	}{Users: users})
+	}{Users: withPhotoURLs(users)})
 }

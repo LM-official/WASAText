@@ -86,8 +86,8 @@ func CountChars(s string) int {
 // Returns error if the uploaded file does not meets the rules, otherwise nil
 func (p PhotoFile) IsValid() error {
 	n := len(p)
-	if n < 1 || n > 31457280 { // 30 Megabyte (30 * 1024 * 1024)
-		return fmt.Errorf("invalid photo size: %d bytes; must be between 1 byte and 30MB", n)
+	if n < 1 || n > MaxPhotoBytes {
+		return fmt.Errorf("invalid photo size: %d bytes; must be between 1 byte and %d", n, MaxPhotoBytes)
 	}
 	return nil
 }

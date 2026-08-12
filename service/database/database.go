@@ -48,10 +48,12 @@ type AppDatabase interface {
 	// My methods
 	DoLogin(username schemas.Username) (schemas.UserId, bool, error)
 	SetMyUserName(userId schemas.UserId, newUsername schemas.Username) (schemas.User, error)
+	SetMyPhoto(userId schemas.UserId, newPhotoId schemas.PhotoId) (schemas.User, schemas.PhotoId, error)
 	GetUsers(username schemas.Username) (schemas.Users, error)
 
 	// My helpers
 	UserExists(userId schemas.UserId) (bool, error)
+	PhotoIsReferenced(photoId schemas.PhotoId) (bool, error)
 	Ping() error
 }
 
@@ -66,16 +68,13 @@ func New(db *sql.DB) (AppDatabase, error) {
 		return nil, errors.New("database is required when building a AppDatabase")
 	}
 
-	// Check if table exists. If not, the database is empty, and we need to create the structure
-	// var tableName string
-	// err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name='example_table';`).Scan(&tableName)
-	// if errors.Is(err, sql.ErrNoRows) {
-	// sqlStmt := `CREATE TABLE example_table (id INTEGER NOT NULL PRIMARY KEY, name TEXT);`
+	// The photo column holds the id of the photo, not its bytes and not its URL:
+	// the bytes are a file of the photos package, and only the api layer builds the URL
 	const sqlStmt = `
 	CREATE TABLE IF NOT EXISTS users (
 		id TEXT NOT NULL PRIMARY KEY,
 		username TEXT NOT NULL UNIQUE,
-		photo TEXT NOT NULL
+		photoId TEXT NOT NULL
 	);`
 	_, err := db.Exec(sqlStmt)
 	if err != nil {
