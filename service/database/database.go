@@ -50,6 +50,7 @@ type AppDatabase interface {
 	SetMyUserName(userId schemas.UserId, newUsername schemas.Username) (schemas.User, error)
 	SetMyPhoto(userId schemas.UserId, newPhotoId schemas.PhotoId) (schemas.User, schemas.PhotoId, error)
 	GetUsers(username schemas.Username) (schemas.Users, error)
+	CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.UserId) (schemas.ChatId, bool, error)
 
 	// My helpers
 	UserExists(userId schemas.UserId) (bool, error)
@@ -75,12 +76,94 @@ func New(db *sql.DB) (AppDatabase, error) {
 		id TEXT NOT NULL PRIMARY KEY,
 		username TEXT NOT NULL UNIQUE,
 		photoId TEXT NOT NULL
+	);
+
+
+	-- A private chat and a group are the same thing with a different chatType:
+	-- a group owns its name and photo, a private chat borrows them from the other member
+	-- A borrowed value is never stored: one row cannot hold both points of view, and a copy
+	-- would go stale on every setMyUserName or setMyPhoto, so those columns stay NULL
+	CREATE TABLE IF NOT EXISTS chats (
+		id TEXT NOT NULL PRIMARY KEY,
+		chatType TEXT NOT NULL,
+		name TEXT,
+		photoId TEXT,
+		-- pairKey is the two member ids sorted and joined:
+		-- UNIQUE needs one row while membership is two, so the pair is flattened, and only one chat can hold it
+		-- NULL for a group: the same people may share many groups
+		pairKey TEXT UNIQUE,
+		CHECK (
+			(chatType = 'private' AND name IS NULL AND photoId IS NULL AND pairKey IS NOT NULL)
+			OR (chatType = 'group' AND name IS NOT NULL AND photoId IS NOT NULL AND pairKey IS NULL)
+		)
+	);
+
+	-- chat_members is the relation itself, one row per membership:
+	-- a user belongs to many chats and a chat holds many users
+	CREATE TABLE IF NOT EXISTS chat_members (
+		chatId TEXT NOT NULL,
+		userId TEXT NOT NULL,
+		-- The date this member last opened the chat, NULL while the member never opened it
+		-- A message is read by a member when the member opened the chat after the message arrived,
+		-- which is what makes the state of a message a value to compute and never a value to store
+		lastReadDate TEXT,
+		-- The composite key makes a duplicate membership unrepresentable
+		PRIMARY KEY (chatId, userId),
+		-- Dropping a chat drops its memberships
+		-- A user still inside a chat cannot be dropped
+		FOREIGN KEY (chatId) REFERENCES chats(id) ON DELETE CASCADE,
+		FOREIGN KEY (userId) REFERENCES users(id)
+	);
+
+	-- Performance only:
+	-- Reading the chats of a user is slow, so needs an index
+	-- Reading the members of a chat is fast (the primary key is already sorted by chatId), so does not need an index
+	CREATE INDEX IF NOT EXISTS idx_chat_members_userId ON chat_members(userId);
+
+	
+	-- The chatId column has no field in schemas.Message:
+	-- the chat is already in the URL of every message endpoint, so it is context and not content
+	-- A message carries text, photo, or both
+	-- There is no state column: 'received by all members' and 'read by all members' are facts about the other members,
+	-- so the state is computed from chat_members.lastReadDate when a chat is read
+	-- date is a string in UTC: written that way it sorts chronologically as text,
+	-- which is what lets the index below order a chat and find its last message
+	CREATE TABLE IF NOT EXISTS messages (
+		id TEXT NOT NULL PRIMARY KEY,
+		chatId TEXT NOT NULL,
+		userId TEXT NOT NULL,
+		text TEXT,
+		photoId TEXT,
+		date TEXT NOT NULL,
+		-- An empty message is not allowed
+		CHECK (text IS NOT NULL OR photoId IS NOT NULL),
+		-- Dropping a chat drops its messages
+		FOREIGN KEY (chatId) REFERENCES chats(id) ON DELETE CASCADE,
+		FOREIGN KEY (userId) REFERENCES users(id)
+	);
+
+	-- Performance only:
+	-- Both the messages list of a chat and the snippet of a chat read one chat sorted by date,
+	-- the snippet taking only the last row
+	CREATE INDEX IF NOT EXISTS idx_messages_chatId_date ON messages(chatId, date);
+
+	-- A comment is the reaction of a user to a message
+	CREATE TABLE IF NOT EXISTS comments (
+		id TEXT NOT NULL PRIMARY KEY,
+		messageId TEXT NOT NULL,
+		userId TEXT NOT NULL,
+		emoji TEXT NOT NULL,
+		-- Only one comment per user per message, so commentMessage replaces instead of piling up
+		-- Is already sorted by messageId, so do not need an index
+		UNIQUE (messageId, userId),
+		-- Dropping a message drops its comments
+		FOREIGN KEY (messageId) REFERENCES messages(id) ON DELETE CASCADE,
+		FOREIGN KEY (userId) REFERENCES users(id)
 	);`
 	_, err := db.Exec(sqlStmt)
 	if err != nil {
-		return nil, fmt.Errorf("error creating users table: %w", err)
+		return nil, fmt.Errorf("error creating database: %w", err)
 	}
-	// }
 
 	return &appdbimpl{
 		c: db,

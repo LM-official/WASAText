@@ -512,7 +512,7 @@ paths:                                                # Rest endpoints
       operationId: 'doLogin'
       description: |
         If the username exists, the user is logged in.
-        If the username is new, the user is registered and logged in
+        If the username is new, the user is registered and logged in.
       summary: 'User login or registration'
       tags: ['User']
       security: []                                    # Exclude this endpoint from authentication
@@ -572,7 +572,7 @@ paths:                                                # Rest endpoints
         Every PhotoURL of this API points here.
         Any authenticated user may read any photo, the same rule getUsers follows for the users.
         The bytes of a photo never change, a new upload gets a new id,
-        so a photo can be cached by the client and never fetched again
+        so a photo can be cached by the client and never fetched again.
       summary: 'Get a photo'
       tags: ['Photo']
       parameters:
@@ -625,7 +625,7 @@ paths:                                                # Rest endpoints
       description: |
         Updates the username of the authenticated user.
         A username belongs to one user only:
-        asking for one that is already taken is a bad request, not a conflict
+        asking for one that is already taken is a bad request, not a conflict.
       summary: 'Update a user username'
       tags: ['User']
       requestBody:
@@ -662,7 +662,7 @@ paths:                                                # Rest endpoints
   /me/photo:
     patch:
       operationId: 'setMyPhoto'
-      description: 'Updates the profile picture of the authenticated user via multipart upload'
+      description: 'Updates the profile picture of the authenticated user via multipart upload.'
       summary: 'Update a user photo'
       tags: ['User']
       requestBody:
@@ -708,7 +708,7 @@ paths:                                                # Rest endpoints
       operationId: 'getUsers'
       description: |
         Retrieves the users whose username starts with the given prefix.
-        A prefix that matches nobody is a 404, so a 200 always carries at least one user
+        A prefix that matches nobody is a 404, so a 200 always carries at least one user.
       summary: 'Get users by username prefix'
       tags: ['User']
       parameters:
@@ -750,7 +750,7 @@ paths:                                                # Rest endpoints
           $ref: '#/components/responses/InternalServerError'
 
 
-  # Chat endpoints
+  # Every chat endpoints
   /chats:
     get:
       operationId: 'getMyConversations'
@@ -1171,11 +1171,15 @@ paths:                                                # Rest endpoints
         '504':
           $ref: '#/components/responses/GatewayTimeout'
 
-  # private chat endpoints
+  # Private chat endpoints
   /private_chats:
     post:
       operationId: 'createPrivateChat'
-      description: 'Creates a new private conversation with another user or returns the existing one'
+      description: |
+        Creates the private chat between the authenticated user and the user of the body,
+        or returns the one the pair already owns.
+        The two members are one pair whichever of them asks: the same chat is returned both ways.
+        The reply carries the chat id alone.
       summary: 'Create a new private chat or get the existing one'
       tags: ['PrivateChat']
       requestBody:
@@ -1196,55 +1200,35 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PrivateChatDetail'
+                description: 'Object containing the chatId'
+                type: object
+                properties:
+                  id:
+                    $ref: '#/components/schemas/ChatId'
+                required: [id]
+                additionalProperties: false           # No other properties allowed
               example:
                 id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
-                chatType: 'private'
-                members: ['cf6a4180-65aa-42ec-a945-5fd21dec0538', '786a4180-65aa-42ec-a945-5fd21dec0538']
-                # Alice's POV
-                name: 'Bob'
-                photo: 'https://api.wasatext.com/photos/bob.png'
-                snippet:
-                  id: '237ac10b-58cc-4372-a567-0e02b2c3d479'
-                  content:
-                    text: 'I will be there in 5 minutes.'
-                    emoji: '📷'
-                  date: '2025-11-15T18:35:00Z'
-                  user: '786a4180-65aa-42ec-a945-5fd21dec0538'
-                  state: 'received'
-                messages:
-                  - id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
-                    content:
-                      text: 'Hey Bob, are you coming?'
-                    date: '2025-11-15T18:30:00Z'
-                    user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
-                    state: 'read'
-                    comments: []
-                  - id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-                    content:
-                      text: 'I will be there in 5 minutes.'
-                      photo: 'https://api.wasatext.com/photos/photo.png'
-                    date: '2025-11-15T18:35:00Z'
-                    user: '786a4180-65aa-42ec-a945-5fd21dec0538'
-                    state: 'received'
-                    comments: []
         '201':
           description: 'Private chat created successfully'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PrivateChatDetail'
+                description: 'Object containing the chatId'
+                type: object
+                properties:
+                  id:
+                    $ref: '#/components/schemas/ChatId'
+                required: [id]
+                additionalProperties: false           # No other properties allowed
               example:
                 id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
-                chatType: 'private'
-                members: ['786b4180-65aa-42ec-a945-5fd21dec0538', '786a4180-65aa-42ec-a945-5fd21dec0533']
-                # MercuriLorenzo's POV
-                name: 'Max'
-                photo: 'https://api.wasatext.com/photos/Max.png'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':                                        # E.g. you cannot create a private chat with yourself
+          $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
         '502':
