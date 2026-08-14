@@ -17,7 +17,7 @@ func (rt *_router) doLogin(w http.ResponseWriter, r *http.Request, ps httprouter
 		return
 	}
 
-	// !uery
+	// Query
 	id, found, err := rt.db.DoLogin(req.Username)
 	if err != nil {
 		writeError(w, ctx, http.StatusInternalServerError, "login failed", err)

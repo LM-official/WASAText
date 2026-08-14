@@ -84,7 +84,15 @@ func run() error {
 
 	// Start Database
 	logger.Println("initializing database support")
-	dbconn, err := sql.Open("sqlite3", cfg.DB.Filename)
+	// _foreign_keys=on in the DSN: SQLite disables foreign keys by default, and setting the pragma
+	// on a single connection would not apply to the other connections opened by the pool
+	//
+	// _txlock=immediate makes every transaction a BEGIN IMMEDIATE,
+	// taking the write lock at the start instead of when the first write happens.
+	// A transaction that reads before it writes would otherwise begin as a reader,
+	// and two of them asking to become writers at the same time deadlock:
+	// SQLite fails one with "database is locked" at once, since waiting cannot help
+	dbconn, err := sql.Open("sqlite3", cfg.DB.Filename+"?_foreign_keys=on&_txlock=immediate")
 	if err != nil {
 		logger.WithError(err).Error("error opening SQLite DB")
 		return fmt.Errorf("opening SQLite: %w", err)

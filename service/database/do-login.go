@@ -1,32 +1,13 @@
 package database
 
 import (
-	"database/sql"
-	"errors"
-
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 	"github.com/gofrs/uuid"
 )
 
-// DoLogin checks if a user with the given username exists in the database
-// It returns the UserId, a boolean indicating if the user was found, and an error if any occurred
+// DoLogin returns the id of the user of the given username, registering the user if the username is new
+// The boolean is true when the user was already registered, so that the api layer can answer 200 instead of 201
 func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, error) {
-	var id schemas.UserId
-
-	// Search for the user in the database
-	err := db.c.QueryRow(`SELECT id FROM users WHERE username = ?;`, username).Scan(&id)
-
-	if err == nil {
-		// User found, login
-		return id, true, nil
-	}
-
-	if !errors.Is(err, sql.ErrNoRows) {
-		// Error searching for the user (error != no row found, e.g. connection issue)
-		return schemas.UserId(""), false, err
-	}
-
-	// User not found (missing row), create new user
 	// Generate the new UUID
 	newUUID, err := uuid.NewV4()
 	if err != nil {
@@ -35,13 +16,32 @@ func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, e
 	}
 	newId := schemas.UserId(newUUID.String())
 
-	// Insert the new user in the database
 	// A new user starts with the default photo id
-	_, err = db.c.Exec(`INSERT INTO users (id, username, photoId) VALUES (?, ?, ?);`, newId, username, schemas.DefaultPhotoId)
+	// DO NOTHING leaves the username to the UNIQUE on that column:
+	// a username that is already registered writes no row and raises no error,
+	// so a second request asking for the same new username is a login and never a failure
+	res, err := db.c.Exec(`INSERT INTO users (id, username, photoId) VALUES (?, ?, ?)
+						   ON CONFLICT(username) DO NOTHING;`, newId, username, schemas.DefaultPhotoId)
 	if err != nil {
 		// Error inserting the new user
 		return schemas.UserId(""), false, err
 	}
 
+	written, err := res.RowsAffected()
+	if err != nil {
+		return schemas.UserId(""), false, err
+	}
+	// No row written: the username is already taken by a user, and that user is the one logging in
+	if written == 0 {
+		var id schemas.UserId
+		if err := db.c.QueryRow(`SELECT id FROM users WHERE username = ?;`, username).Scan(&id); err != nil {
+			// Error searching for the user
+			return schemas.UserId(""), false, err
+		}
+		// User found, login
+		return id, true, nil
+	}
+
+	// User registered
 	return newId, false, nil
 }
