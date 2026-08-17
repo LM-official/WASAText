@@ -29,6 +29,16 @@ func decodeAndValidate(r *http.Request, req validator) error {
 	return req.IsValid()
 }
 
+// unmarshalAndValidate fills req from data and checks it
+// The JSON of a multipart request is a part and not the body, so it is already read when it gets here
+func unmarshalAndValidate(data []byte, req validator) error {
+	if err := json.Unmarshal(data, req); err != nil {
+		return fmt.Errorf("malformed JSON part: %w", err)
+	}
+
+	return req.IsValid()
+}
+
 // writeJSON replies with body encoded as JSON and the given status code
 func writeJSON(w http.ResponseWriter, ctx reqcontext.RequestContext, code int, body interface{}) {
 	w.Header().Set("Content-Type", "application/json")

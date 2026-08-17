@@ -65,7 +65,7 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 		return id, true, nil
 	}
 
-	// New chat created, update chat_members
+	// New chat created, update the memberships
 	_, err = tx.Exec(`INSERT INTO chat_members (chatId, userId) VALUES (?, ?), (?, ?);`, newId, userId1, newId, userId2)
 	if err != nil {
 		// Error inserting the members

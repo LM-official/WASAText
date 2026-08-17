@@ -35,7 +35,7 @@ func (rt *_router) createPrivateChat(w http.ResponseWriter, r *http.Request, ps 
 	}
 
 	// The other member must exist
-	exists, err := rt.db.UserExists(req.Id)
+	exists, err := rt.db.UsersExist(schemas.Members{req.Id})
 	if err != nil {
 		writeError(w, ctx, http.StatusInternalServerError, "cannot verify the other user", err)
 		return

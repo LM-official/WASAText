@@ -33,7 +33,7 @@ func (rt *_router) authenticate(next httpRouterHandler) httpRouterHandler {
 			return
 		}
 
-		exists, err := rt.db.UserExists(userId)
+		exists, err := rt.db.UsersExist(schemas.Members{userId})
 		if err != nil {
 			// Error in database check
 			writeError(w, ctx, http.StatusInternalServerError, "cannot verify the token", err)

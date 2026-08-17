@@ -51,9 +51,10 @@ type AppDatabase interface {
 	SetMyPhoto(userId schemas.UserId, newPhotoId schemas.PhotoId) (schemas.User, schemas.PhotoId, error)
 	GetUsers(username schemas.Username) (schemas.Users, error)
 	CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.UserId) (schemas.ChatId, bool, error)
+	CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatId, error)
 
 	// My helpers
-	UserExists(userId schemas.UserId) (bool, error)
+	UsersExist(userIds schemas.Members) (bool, error)
 	PhotoIsReferenced(photoId schemas.PhotoId) (bool, error)
 	Ping() error
 }

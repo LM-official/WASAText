@@ -485,9 +485,10 @@ func (g *GroupRequest) IsValid() error {
 		return err
 	}
 
-	// A new group starts with the creator plus at least one other member
-	if n := len(g.Members); n < 2 || n > 100 {
-		return fmt.Errorf("invalid group members: %d; must be between 2 and 100", n)
+	// The request carries the other members only, the creator is added by the server:
+	// at least one other member, and one place less than the whole group, which the creator takes
+	if n := len(g.Members); n < 1 || n > 99 {
+		return fmt.Errorf("invalid group members: %d; must be between 1 and 99", n)
 	}
 
 	return g.Members.IsValid()

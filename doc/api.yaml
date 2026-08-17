@@ -1242,11 +1242,15 @@ paths:                                                # Rest endpoints
   /groups:
     post:
       operationId: 'createGroup'
-      description: 'Creates a new group chat with a name, an optional photo, and a list of initial members'
+      description: |
+        Creates a group whose members are the users of the request plus the authenticated one.
+        The creator is not carried by the body: it opens the group, so it belongs to it and the server adds it,
+        which is why the list holds one place less than the whole group.
+        The reply carries the chat id alone.
       summary: 'Create a new group chat'
       tags: ['Group']
       requestBody:
-        description: 'Group creation data: name, photo (optional) and list of initial members'
+        description: 'Group creation data: name, members and photo'
         content:
           multipart/form-data:
             schema:
@@ -1261,18 +1265,19 @@ paths:                                                # Rest endpoints
                       $ref: '#/components/schemas/GroupName'
                     members:
                       description: |
-                        List of the UserId of the initial members of the group,
-                        the creator is already inside this list, so it is the whole group
+                        List of the UserId of the other initial members of the group:
+                        the creator is added by the server and never appears here,
+                        asking for a group that already holds it is a bad request
                       type: array
                       items:
                         $ref: '#/components/schemas/UserId'
-                      minItems: 2                     # the creator plus at least one other member
-                      maxItems: 100
+                      minItems: 1                     # at least one member other than the creator
+                      maxItems: 99                    # the whole group is 100, one place is the creator
                       uniqueItems: true               # ensure that each member could be once in the members list
                   required: [name, members]
                 photoFile:
                   $ref: '#/components/schemas/Photo'
-              required: [data]
+              required: [data, photoFile]
             encoding:                                 # for multipart/form-data with JSON field
               data:
                 contentType: application/json
@@ -1283,51 +1288,23 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/GroupDetail'
+                description: 'Object containing the chatId'
+                type: object
+                properties:
+                  id:
+                    $ref: '#/components/schemas/ChatId'
+                required: [id]
+                additionalProperties: false           # No other properties allowed
               example:
                 id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
-                chatType: 'group'
-                members: ['cab2c3d4-e5f6-42ec-a945-5fd21dec0538', '90b2c3d4-e5f6-42ec-a945-5fd21dec0538', '27b2c3d4-e5f6-42ec-a945-5fd21dec0538']
-                name: 'Dev Team'
-                photo: 'https://api.wasatext.com/photos/dev_team.png'
-                snippet:
-                  id: '12b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                  content:
-                    text: 'Meeting moved to Friday.'
-                    emoji: '📷'
-                  date: '2025-11-15T19:00:00Z'
-                  user: 'cab2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                  state: 'received'
-                messages:
-                  - id: '9b1deb4d-3b7d-4bad-9bdd-2b0c7b3dcb6d'
-                    content:
-                      text: 'When is the next stand-up?'
-                    date: '2025-11-15T18:55:00Z'
-                    user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                    state: 'read'
-                    comments: []
-                  - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                    content:
-                      text: 'Meeting moved to Friday.'
-                      photo: 'https://api.wasatext.com/photos/meetingSchedule.png'
-                    date: '2025-11-15T19:00:00Z'
-                    user: 'cab2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                    state: 'received'
-                    comments: []
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
+        '404':                                        # one of the members does not exist
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
   
   /groups/{chatId}/name:
     patch:
