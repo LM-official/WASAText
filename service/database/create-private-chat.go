@@ -44,8 +44,8 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 	// A private chat owns no name and no photo: it borrows both from the other member
 	// DO NOTHING leaves the pair to the UNIQUE on pairKey:
 	// a chat that is already there writes no row and raises no error
-	res, err := tx.Exec(`INSERT INTO chats (id, chatType, name, photoId, pairKey) VALUES (?, 'private', NULL, NULL, ?)
-						 ON CONFLICT(pairKey) DO NOTHING;`, newId, key)
+	res, err := tx.Exec(`INSERT INTO chats (id, chatType, name, photoId, pairKey) VALUES (?, ?, NULL, NULL, ?)
+						 ON CONFLICT(pairKey) DO NOTHING;`, newId, schemas.ChatTypePrivate, key)
 	if err != nil {
 		// Error inserting the new chat
 		return schemas.ChatId(""), false, err

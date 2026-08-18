@@ -19,3 +19,9 @@ func withPhotoURLs(us schemas.Users) schemas.Users {
 	}
 	return us
 }
+
+// withChatPhotoURL turns the stored photo id of a chat into the URL the API returns
+func withChatPhotoURL(c schemas.ChatSummary) schemas.ChatSummary {
+	c.Photo = schemas.PhotoId(c.Photo).URL()
+	return c
+}

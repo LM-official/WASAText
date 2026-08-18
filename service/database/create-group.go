@@ -42,7 +42,7 @@ func (db *appdbimpl) CreateGroup(creator schemas.UserId, userIds schemas.Members
 	defer func() { _ = tx.Rollback() }()
 
 	// A group chat owns its name and photo
-	_, err = tx.Exec(`INSERT INTO chats (id, chatType, name, photoId, pairKey) VALUES (?, 'group', ?, ?, NULL);`, newId, name, photoId)
+	_, err = tx.Exec(`INSERT INTO chats (id, chatType, name, photoId, pairKey) VALUES (?, ?, ?, ?, NULL);`, newId, schemas.ChatTypeGroup, name, photoId)
 	if err != nil {
 		// Error inserting the new chat
 		return schemas.ChatId(""), err

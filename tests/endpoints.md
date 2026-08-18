@@ -1,6 +1,6 @@
 # WASAText — endpoint tests
 Manual tests for the endpoints registered in `service/api/api-handler.go`:
-`doLogin`, `setMyUserName`, `setMyPhoto`, `getUsers`, `getPhoto`, `createPrivateChat`, `createGroup`.
+`doLogin`, `setMyUserName`, `setMyPhoto`, `getUsers`, `getPhoto`, `createPrivateChat`, `createGroup`, `setGroupName`.
 
 ## Run
 ```shell
@@ -35,7 +35,7 @@ printf 'not an image' > /tmp/text.txt
 ---
 
 ## 0. Authentication — every endpoint but `doLogin`
-`service/api/api-authenticate.go` runs before the handler, so these answers are the same on `/me/username`, `/me/photo`, `/users`, `/photos/:photoId`, `/private_chats` and `/groups`, and nothing is read or written when they fire.
+`service/api/api-authenticate.go` runs before the handler, so these answers are the same on `/me/username`, `/me/photo`, `/users`, `/photos/:photoId`, `/private_chats`, `/groups` and `/groups/:chatId/name`, and nothing is read or written when they fire.
 
 | Authorization header | reply |
 |---|---|
@@ -71,7 +71,7 @@ curl -i -X POST localhost:3000/session -H 'Content-Type: application/json' -d "{
 | `{"username":"<30 chars>"}` | `201` |
 | `{"username":"<31 chars>"}` | `400` |
 | `{"username":` (truncated) or empty body | `400 invalid request body` |
-| `{"username":"carl$R","admin":true}` | `200`/`201` — unknown fields are ignored, see §10 |
+| `{"username":"carl$R","admin":true}` | `200`/`201` — unknown fields are ignored, see §11 |
 
 The returned id is the bearer token of every other test: this is the only point where `doLogin` and `authenticate` have to agree.
 
@@ -90,7 +90,7 @@ curl -i -X PATCH localhost:3000/me/username \
 | the username it already has | `200`, unchanged — updating a row to its own value is not a UNIQUE conflict |
 | `"bob$R"` (owned by B) | `400 {"code":400,"message":"username already taken"}`, nothing written |
 | `{"username":""}`, `{}`, `{"username":"a b"}`, 31 chars | `400 invalid request body` |
-| `Content-Type: application/json` | identical result — the handler never reads the header (§10) |
+| `Content-Type: application/json` | identical result — the handler never reads the header (§11) |
 | bad/absent token | §0, and the username is not touched |
 
 The `photo` field is a URL and never the stored id: `service/api/photo-url.go` is what turns one into the other. A user that never uploaded shows the default id.
@@ -109,7 +109,7 @@ curl -i "localhost:3000/users?username=alice" -H "Authorization: Bearer $A"
 | `?username=` or the parameter absent | `400 {"code":400,"message":"invalid username"}` |
 | `?username=a b` (invalid chars) | `400 invalid username` |
 | more than 20 matches | `200` with the first 20 (`LIMIT 20`) |
-| own username with own token | `200`, and the caller is in the list — see §11 |
+| own username with own token | `200`, and the caller is in the list — see §12 |
 
 LIKE escaping. `_` and `%` are LIKE wildcards and `_` is a legal username character, so `service/database/get-users.go` escapes the prefix:
 ```shell
@@ -240,7 +240,55 @@ Order of the checks. The photo is read only after the data part and the members 
 
 ---
 
-## 8. Router level — the answers that are not JSON
+## 8. `setGroupName` — `PATCH /groups/{chatId}/name`
+Two more fixtures: a group to rename, and a user who is not one of its members.
+```shell
+C=$(curl -s -X POST localhost:3000/session -H 'Content-Type: application/json' -d "{\"username\":\"carl$R\"}" | id)
+G=$(curl -s -X POST localhost:3000/groups -H "Authorization: Bearer $A" \
+  -F "data={\"name\":\"Study $R\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+
+curl -i -X PATCH localhost:3000/groups/$G/name \
+  -H "Authorization: Bearer $A" -H 'Content-Type: application/merge-patch+json' \
+  -d '{"name":"CS Study Group"}'
+```
+
+| case | reply |
+|---|---|
+| a member renames | `200 {"id":"$G","chatType":"group","name":"CS Study Group","photo":"/photos/<uuid>"}` |
+| the other member renames | `200` — every member may rename, a group has no owner |
+| the name it already has | `200`, unchanged — a group name has no `UNIQUE`, so a rename is idempotent |
+| exactly 100 chars | `200` |
+| `{"name":"👨‍👩‍👧‍👦"}` | `200` — one grapheme cluster, `CountChars` counts 1 and not 11 runes |
+| a caller who is not a member | `403 {"code":403,"message":"not a member of the group"}` |
+| a valid UUID owned by nobody | `404 {"code":404,"message":"group not found"}` |
+| the id of a private chat | `404 group not found` — a private chat borrows its name and owns none to update |
+| `/groups/not-a-uuid/name`, or the uppercase UUID | `400 {"code":400,"message":"invalid chat id"}` |
+| `{"name":""}`, `{"name":"   "}`, `{}`, `{"name":null}`, 101 chars | `400 invalid request body` |
+| malformed or empty body | `400 invalid request body` |
+| `Content-Type: application/json` | identical result — the handler never reads the header (§11) |
+| `{"name":"x","admin":true}` | `200` — unknown fields are ignored (§11) |
+| `GET` / `POST` on the same path | `405 Method Not Allowed` (§9) |
+| bad/absent token | §0, and the name is not touched |
+
+The reply is a `GroupSummary`: renaming never reads the messages of the group, so the `snippet` derived from them.
+
+The `chatType` is not read back from the row. It is a condition of the write, so a returned row is always a group.
+
+403 vs 404. `RETURNING` gives `sql.ErrNoRows` for both reasons, so one extra read tells them apart: if a group with that id exists, membership was the guard that failed. That read looks at `id` and `chatType` only — columns no endpoint ever changes — so a concurrent rename cannot make it answer the wrong one.
+
+Nothing is written when a call is refused:
+```shell
+curl -s -X PATCH localhost:3000/groups/$G/name -H "Authorization: Bearer $C" \
+  -H 'Content-Type: application/merge-patch+json' -d '{"name":"Hijacked"}'      # -> 403
+sqlite3 db/wasatext.db "SELECT name FROM chats WHERE id='$G';"                  # still the previous name
+sqlite3 db/wasatext.db "SELECT quote(name), quote(photoId) FROM chats WHERE id='$P';"  # NULL|NULL, the CHECK is never at risk
+```
+
+Concurrency. Two members renaming at once both succeed and the last writer wins, with no indication to the first.
+
+---
+
+## 9. Router level — the answers that are not JSON
 `httprouter` replies before any handler, so these carry a plain text body and not the `Error` schema.
 
 | request | reply |
@@ -259,7 +307,7 @@ curl -i -X OPTIONS localhost:3000/me/username -H 'Origin: http://localhost:5173'
 
 ---
 
-## 9. Scenarios — a sequence, not a single call
+## 10. Scenarios — a sequence, not a single call
 S1 — the token of `doLogin` is accepted by `authenticate`. `doLogin "s1$R"` → `201` id; `GET /users?username=s1$R` with that id → `200`. Nothing else checks that the two endpoints agree.
 
 S2 — the token survives a rename. `doLogin "s2$R"` → id; `setMyUserName "s2b$R"` → `200`; `getUsers` with the same id → `200`. The token is the user id and the id never changes: a rename must not log anybody out.
@@ -274,12 +322,22 @@ S6 — chat and group do not collide. A+B `createPrivateChat` → chat C (`201`,
 
 S7 — nothing survives a refused write. Count `db/photos` and the `chats` rows, send a `createGroup` with a nonexistent member and a valid photo, count again: both unchanged. The photo is saved after the check, and the chat plus its memberships are one transaction.
 
+S8 — a rename touches the name and nothing else. `createGroup` → G with photo URL P; `setGroupName` twice → `200` each time and the `photo` in both replies is still P; `getPhoto P` → `200`. A rename writes one column, so it can neither orphan the group photo nor collect it.
+
+S9 — the two kinds of chat stay apart under `/groups/`. A+B `createPrivateChat` → C; `setGroupName` on C → `404 group not found`, and the row of C still has `name` and `photoId` `NULL`. A `createGroup` with B → G; `setGroupName` on G → `200`. The same id space, two answers, and the `chats` CHECK is never reached because the `WHERE` filters on `chatType` first.
+
 ---
 
-## 10. Known mismatches with `doc/api.yaml` (implemented endpoints only)
+## 11. Known mismatches with `doc/api.yaml` (implemented endpoints only)
 Open:
 - `additionalProperties: false` is not enforced. `encoding/json` ignores unknown fields, so `{"username":"x","admin":true}` is accepted. Fix: `dec.DisallowUnknownFields()` in `decodeAndValidate`.
 - The request `Content-Type` is never read. `application/json` works where the spec says `application/merge-patch+json`. Permissive, not wrong.
+- A name is trimmed to be counted and stored untrimmed. `CountChars` measures `strings.TrimSpace(s)`, so `"  <100 chars>  "` passes the 1–100 rule and 104 characters reach the column and the reply, over `GroupName`'s `maxLength: 100`. Affects `ChatName` and, when it lands, `MessageText`; `Username` is safe because its pattern already refuses whitespace. Fix: trim before storing, or count the untrimmed string.
+```shell
+curl -s -X PATCH localhost:3000/groups/$G/name -H "Authorization: Bearer $A" \
+  -H 'Content-Type: application/merge-patch+json' -d "{\"name\":\"  $(printf 'x%.0s' $(seq 100))  \"}"
+sqlite3 db/wasatext.db "SELECT length(name) FROM chats WHERE id='$G';"   # -> 104
+```
 
-## 11. Open decisions
+## 12. Open decisions
 - The search returns the caller. Nothing filters the caller out of `getUsers`, and the frontend uses that list to open a private chat — where picking yourself is a `400`. Either the query adds `AND id != <caller>`, or the frontend hides the row.

@@ -8,4 +8,11 @@ import "errors"
 var (
 	// ErrUsernameTaken is returned when the username is already used by another user
 	ErrUsernameTaken = errors.New("username already taken")
+
+	// ErrChatNotFound is returned when no chat owns the given id, or it is not the kind of chat the caller asked for
+	// A private chat reached through a /groups/ route is not found: under that collection its id names nothing
+	ErrChatNotFound = errors.New("chat not found")
+
+	// ErrNotAMember is returned when the chat exists but the caller does not belong to it
+	ErrNotAMember = errors.New("not a member of the chat")
 )
