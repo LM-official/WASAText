@@ -688,20 +688,12 @@ paths:                                                # Rest endpoints
                 id: '126a4180-65aa-42ec-a945-5fd21dec0538'
                 username: 'MercuriLorenzo'
                 photo: '/photos/7b9d3f21-4c8e-4a55-9f10-2ed6c4b7a318'
-        '400':
+        '400':                                        # Not multipart, no photoFile part, or the file is not an image
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
 
   /users:
     get:
@@ -1223,20 +1215,14 @@ paths:                                                # Rest endpoints
                 additionalProperties: false           # No other properties allowed
               example:
                 id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
-        '400':
+        '400':                                        # E.g. you cannot create a private chat with yourself
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':                                        # E.g. you cannot create a private chat with yourself
+        '404':                                        # The other user does not exist
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
   
   # group endpoints
   /groups:
