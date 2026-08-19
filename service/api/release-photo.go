@@ -22,7 +22,7 @@ func (rt *_router) releasePhoto(oldPhotoId schemas.PhotoId, ctx reqcontext.Reque
 	referenced, err := rt.db.PhotoIsReferenced(oldPhotoId)
 	if err != nil {
 		// Unknown whether the photo is still in use: keeping it
-		ctx.Logger.WithError(err).Warning("cannot tell if the photo is still referenced")
+		logWarning(ctx, "cannot tell if the photo is still referenced", err)
 		return
 	}
 	if referenced {
@@ -31,6 +31,6 @@ func (rt *_router) releasePhoto(oldPhotoId schemas.PhotoId, ctx reqcontext.Reque
 	}
 
 	if err := rt.photos.Delete(oldPhotoId); err != nil {
-		ctx.Logger.WithError(err).Warning("cannot delete the unreferenced photo")
+		logWarning(ctx, "cannot delete the unreferenced photo", err)
 	}
 }

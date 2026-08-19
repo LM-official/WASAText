@@ -3,6 +3,7 @@ package api
 // The api layer answers in JSON on success and on failure alike:
 // these helpers are the only place that writes a response body,
 // so a handler never repeats the decode / validate / content-type / status / encode sequence
+// They are also the only place that reports a failure, so nothing outside this file touches the logger
 
 import (
 	"encoding/json"
@@ -61,4 +62,16 @@ func writeError(w http.ResponseWriter, ctx reqcontext.RequestContext, code int, 
 	}
 
 	writeJSON(w, ctx, code, schemas.Error{Code: code, Message: message})
+}
+
+// logWarning reports a failure that has no reply of its own
+// Either the response is already on the wire, or the caller answers right below with its own status:
+// a writeError here would put a second body after the first one, and would answer for the wrong failure
+// So this one reaches the server log alone, which is where a failure the client can do nothing about belongs
+func logWarning(ctx reqcontext.RequestContext, message string, cause error) {
+	if cause != nil {
+		ctx.Logger.WithError(cause).Warning(message)
+	} else {
+		ctx.Logger.Warning(message)
+	}
 }

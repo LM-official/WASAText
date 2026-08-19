@@ -23,6 +23,7 @@ func (rt *_router) Handler() http.Handler {
 	rt.router.POST("/private_chats", rt.wrap(rt.authenticate(rt.createPrivateChat)))
 	rt.router.POST("/groups", rt.wrap(rt.authenticate(rt.createGroup)))
 	rt.router.PATCH("/groups/:chatId/name", rt.wrap(rt.authenticate(rt.setGroupName)))
+	rt.router.PATCH("/groups/:chatId/photo", rt.wrap(rt.authenticate(rt.setGroupPhoto)))
 
 	// Special routes
 	rt.router.GET("/liveness", rt.liveness)

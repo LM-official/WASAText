@@ -88,7 +88,7 @@ func (rt *_router) createGroup(w http.ResponseWriter, r *http.Request, ps httpro
 		// The new photo is on disk but no row points at it: drop it instead of leaking a file
 		// It is always an upload of this request, never a photo shared with something else
 		if delErr := rt.photos.Delete(photoId); delErr != nil {
-			ctx.Logger.WithError(delErr).Warning("cannot delete the photo of a failed group creation")
+			logWarning(ctx, "cannot delete the photo of a failed group creation", delErr)
 		}
 
 		writeError(w, ctx, http.StatusInternalServerError, "cannot create the group", err)

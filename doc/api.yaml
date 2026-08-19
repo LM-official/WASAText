@@ -1342,7 +1342,11 @@ paths:                                                # Rest endpoints
   /groups/{chatId}/photo:
     patch:
       operationId: 'setGroupPhoto'
-      description: 'Updates the picture of a group the user is a member of via multipart upload'
+      description: |
+        Updates the picture of a group the authenticated user is a member of via multipart upload.
+        A private chat borrows its photo from the other member and owns none to update,
+        so its id names nothing under this collection and is a 404 here.
+        The replaced photo is dropped once no row points at it any more.
       summary: 'Update group photo'
       tags: ['Group']
       parameters:
@@ -1364,54 +1368,23 @@ paths:                                                # Rest endpoints
           description: 'Group photo updated successfully'
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/GroupDetail'
+              schema:                                 # No messages list: replacing a photo never reads them,
+                $ref: '#/components/schemas/GroupSummary' # and the snippet they derive is absent with them
               example:
                 id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
                 chatType: 'group'
                 name: 'Computer Science Study Group'
-                photo: 'https://api.wasatext.com/photos/cs_group.png'
-                members: ['90b2c3d4-e5f6-42ec-a945-5fd21dec0538', '80b2c3d4-e5f6-42ec-a945-5fd21dec0538', '70b2c3d4-e5f6-42ec-a945-5fd21dec0538']
-                snippet:
-                  id: '123a4180-65aa-42ac-a945-5fd21dec0538'
-                  content:
-                    text: 'The exam is next Monday at 9 AM.'
-                    emoji: '📷'
-                  date: '2025-11-10T09:05:00Z'
-                  user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                  state: 'received'
-                messages:
-                  - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                    content:
-                      text: 'Hey everyone, does anyone know the exam schedule?'
-                    date: '2025-11-10T09:00:00Z'
-                    user: '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                    state: 'read'
-                    comments: []
-                  - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
-                    content:
-                      text: 'The exam is next Monday at 9 AM.'
-                      photo: 'https://api.wasatext.com/photos/exameSchedule.jpg'
-                    date: '2025-11-10T09:05:00Z'
-                    user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                    state: 'received'
-                    comments: []
-        '400':
+                photo: '/photos/7b9d3f21-4c8e-4a55-9f10-2ed6c4b7a318'
+        '400':                                        # Not multipart, no photoFile part, or the file is not an image
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
+        '403':                                        # Not a member of the group
           $ref: '#/components/responses/Forbidden'
-        '404':
+        '404':                                        # No group owns that id
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
 
   /groups/{chatId}/members:
     post:

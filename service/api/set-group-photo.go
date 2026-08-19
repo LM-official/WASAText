@@ -5,17 +5,28 @@ import (
 	"net/http"
 
 	"github.com/MercuriLorenzo/WASAText/service/api/reqcontext"
+	"github.com/MercuriLorenzo/WASAText/service/database"
 	"github.com/MercuriLorenzo/WASAText/service/photos"
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 	"github.com/julienschmidt/httprouter"
 )
 
-// setMyPhoto replaces the profile picture of the authenticated user
-func (rt *_router) setMyPhoto(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
+// setGroupPhoto replaces the picture of a group the authenticated user is a member of
+func (rt *_router) setGroupPhoto(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	// Get the userId that authenticate injected in the request
 	userId, ok := userIdFromContext(r)
 	if !ok {
 		writeError(w, ctx, http.StatusUnauthorized, "user not authenticated", nil)
+		return
+	}
+
+	// The group travels in the URL and not in a body, so it is checked here:
+	// it reaches the database only once it is a well formed id
+	// ByName returns a string, and an assignment needs one of the two types to be unnamed:
+	// string and ChatId are both named, so the conversion is what carries the id across
+	chatId := schemas.ChatId(ps.ByName("chatId"))
+	if err := chatId.IsValid(); err != nil {
+		writeError(w, ctx, http.StatusBadRequest, "invalid chat id", err)
 		return
 	}
 
@@ -31,6 +42,7 @@ func (rt *_router) setMyPhoto(w http.ResponseWriter, r *http.Request, ps httprou
 	// Drop the temporary files of the parser
 	defer func() { _ = r.MultipartForm.RemoveAll() }()
 
+	// The photo is the whole request: the group travels in the URL, so there is no other part to read
 	file, _, err := r.FormFile("photoFile")
 	if err != nil {
 		writeError(w, ctx, http.StatusBadRequest, "missing photoFile field", err)
@@ -52,19 +64,32 @@ func (rt *_router) setMyPhoto(w http.ResponseWriter, r *http.Request, ps httprou
 	}
 
 	// Query
-	user, oldPhotoId, err := rt.db.SetMyPhoto(userId, newPhotoId)
+	chat, oldPhotoId, err := rt.db.SetGroupPhoto(userId, chatId, newPhotoId)
 	if err != nil {
-		// The new photo is on disk but no row points at it: drop it instead of leaking a file
+		// Whatever the failure is, the new photo is on disk and no row points at it: drop it instead of leaking a file
 		if delErr := rt.photos.Delete(newPhotoId); delErr != nil {
-			logWarning(ctx, "cannot delete the photo of a failed update", delErr)
+			logWarning(ctx, "cannot delete the photo of a failed group photo update", delErr)
 		}
 
-		writeError(w, ctx, http.StatusInternalServerError, "cannot update the photo", err)
+		// No group owns that id: it may not exist at all, or be a private chat,
+		// which borrows its photo from the other member and owns none to update
+		if errors.Is(err, database.ErrChatNotFound) {
+			writeError(w, ctx, http.StatusNotFound, "group not found", nil)
+			return
+		}
+
+		// The group is there, but changing its photo belongs to its members
+		if errors.Is(err, database.ErrNotAMember) {
+			writeError(w, ctx, http.StatusForbidden, "not a member of the group", nil)
+			return
+		}
+
+		writeError(w, ctx, http.StatusInternalServerError, "cannot update the group photo", err)
 		return
 	}
 
 	// Response
-	writeJSON(w, ctx, http.StatusOK, withPhotoURL(user))
+	writeJSON(w, ctx, http.StatusOK, withChatPhotoURL(chat))
 
 	// The replaced photo is garbage now, unless something else still shows it
 	rt.releasePhoto(oldPhotoId, ctx)
