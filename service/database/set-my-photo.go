@@ -23,22 +23,22 @@ func (db *appdbimpl) SetMyPhoto(userId schemas.UserId, newPhotoId schemas.PhotoI
 	// Get the photo that is being replaced
 	var oldPhotoId schemas.PhotoId
 	err = tx.QueryRow(`SELECT photoId FROM users WHERE id = ?;`, userId).Scan(&oldPhotoId)
+	// Error fetching the current photo
 	if err != nil {
-		// Error fetching the current photo
 		return schemas.User{}, "", err
 	}
 
 	_, err = tx.Exec(`UPDATE users SET photoId = ? WHERE id = ?;`, newPhotoId, userId)
+	// Error during update
 	if err != nil {
-		// Error during update
 		return schemas.User{}, "", err
 	}
 
 	// Get the updated user
 	var user schemas.User
 	err = tx.QueryRow(`SELECT id, username, photoId FROM users WHERE id = ?;`, userId).Scan(&user.Id, &user.Username, &user.Photo)
+	// Error fetching updated user
 	if err != nil {
-		// Error fetching updated user
 		return schemas.User{}, "", err
 	}
 

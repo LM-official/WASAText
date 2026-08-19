@@ -355,6 +355,14 @@ components:                                           # Reusable components
         $ref: '#/components/schemas/ChatId'
       required: true
 
+    ParamGroupId:                                     # Same id space as ParamChatId, one kind of chat less:
+      name: groupId                                   # under /groups the id must name a group, and a private chat is a 404
+      description: 'Group unique identifier'
+      in: path
+      schema:
+        $ref: '#/components/schemas/ChatId'
+      required: true
+
     ParamMessageId:
       name: messageId
       description: 'Message unique identifier'
@@ -1164,7 +1172,7 @@ paths:                                                # Rest endpoints
           $ref: '#/components/responses/GatewayTimeout'
 
   # Private chat endpoints
-  /private_chats:
+  /private-chats:
     post:
       operationId: 'createPrivateChat'
       description: |
@@ -1292,7 +1300,7 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
   
-  /groups/{chatId}/name:
+  /groups/{groupId}/name:
     patch:
       operationId: 'setGroupName'
       description: |
@@ -1302,7 +1310,7 @@ paths:                                                # Rest endpoints
       summary: 'Update group name'
       tags: ['Group']
       parameters:
-        - $ref: '#/components/parameters/ParamChatId'
+        - $ref: '#/components/parameters/ParamGroupId'
       requestBody:
         description: 'New group name'
         content:
@@ -1339,7 +1347,7 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
   
-  /groups/{chatId}/photo:
+  /groups/{groupId}/photo:
     patch:
       operationId: 'setGroupPhoto'
       description: |
@@ -1350,7 +1358,7 @@ paths:                                                # Rest endpoints
       summary: 'Update group photo'
       tags: ['Group']
       parameters:
-        - $ref: '#/components/parameters/ParamChatId'
+        - $ref: '#/components/parameters/ParamGroupId'
       requestBody:
         description: 'New group photo'
         content:
@@ -1386,7 +1394,7 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /groups/{chatId}/members:
+  /groups/{groupId}/members:
     post:
       operationId: 'addToGroup'
       description: |
@@ -1395,7 +1403,7 @@ paths:                                                # Rest endpoints
       summary: 'Add users in a group'
       tags: ['Group']
       parameters:
-        - $ref: '#/components/parameters/ParamChatId'
+        - $ref: '#/components/parameters/ParamGroupId'
       requestBody:
         description: 'List of the UserId of the new members to add to the group'
         content:
@@ -1467,14 +1475,14 @@ paths:                                                # Rest endpoints
         '504':
           $ref: '#/components/responses/GatewayTimeout'
 
-  /groups/{chatId}/members/me:
+  /groups/{groupId}/members/me:
     delete:
       operationId: 'leaveGroup'
       description: 'Removes the authenticated user from a group he is a member of'
       summary: 'Leave a group chat'
       tags: ['Group']
       parameters:
-        - $ref: '#/components/parameters/ParamChatId'
+        - $ref: '#/components/parameters/ParamGroupId'
       responses:
         '200':
           description: 'User left the group successfully'

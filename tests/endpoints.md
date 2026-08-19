@@ -2,6 +2,8 @@
 Manual tests for the endpoints registered in `service/api/api-handler.go`:
 `doLogin`, `setMyUserName`, `setMyPhoto`, `getUsers`, `getPhoto`, `createPrivateChat`, `createGroup`, `setGroupName`, `setGroupPhoto`.
 
+Last full run: 2026-08-19, every row below re-checked against a live server.
+
 ## Run
 ```shell
 go run ./cmd/webapi/          # another terminal
@@ -35,11 +37,11 @@ printf 'not an image' > /tmp/text.txt
 ---
 
 ## 0. Authentication — every endpoint but `doLogin`
-`service/api/api-authenticate.go` runs before the handler, so these answers are the same on `/me/username`, `/me/photo`, `/users`, `/photos/:photoId`, `/private_chats`, `/groups`, `/groups/:chatId/name` and `/groups/:chatId/photo`, and nothing is read or written when they fire.
+`service/api/api-authenticate.go` runs before the handler, so these answers are the same on `/me/username`, `/me/photo`, `/users`, `/photos/:photoId`, `/private-chats`, `/groups`, `/groups/:groupId/name` and `/groups/:groupId/photo`, and nothing is read or written when they fire.
 
 | Authorization header | reply |
 |---|---|
-| *(absent)* | `401 {"code":401,"message":"missing bearer token"}` |
+| (absent) | `401 {"code":401,"message":"missing bearer token"}` |
 | `bearer $A` (lowercase) | `401 missing bearer token` — the prefix is `Bearer ` exactly |
 | `Bearer` (no token) | `401 missing bearer token` |
 | `Bearer not-a-uuid` | `401 {"code":401,"message":"invalid token format"}` |
@@ -181,7 +183,8 @@ curl -i localhost:3000/photos/00000000-0000-4000-8000-000000000000 -H "Authoriza
 |---|---|
 | an existing id | `200`, `Content-Type: image/png`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=31536000, immutable` |
 | `/photos/not-a-uuid` | `400 {"code":400,"message":"invalid photo id"}` |
-| `/photos/../../etc/passwd` | `400 invalid photo id` — an id is a canonical UUID, so it can hold no `/` and no `.` |
+| `/photos/..` or `/photos/a.b` | `400 invalid photo id` — an id is a canonical UUID, so it can hold no `.` |
+| `/photos/../../etc/passwd`, raw or percent-encoded | `404`, plain text — the extra segments match no route, so the router answers before the handler (§10) |
 | a valid UUID with no file | `404 {"code":404,"message":"photo not found"}` |
 | no token | `401` — which is why the frontend cannot use a plain `<img src>` and has to fetch the bytes |
 
@@ -194,9 +197,9 @@ The type is the one detected from the bytes: a file renamed `.png` that is reall
 
 ---
 
-## 6. `createPrivateChat` — `POST /private_chats`
+## 6. `createPrivateChat` — `POST /private-chats`
 ```shell
-curl -i -X POST localhost:3000/private_chats -H "Authorization: Bearer $A" \
+curl -i -X POST localhost:3000/private-chats -H "Authorization: Bearer $A" \
   -H 'Content-Type: application/json' -d "{\"id\":\"$B\"}"
 ```
 
@@ -223,7 +226,7 @@ curl -i -X POST localhost:3000/groups -H "Authorization: Bearer $A" \
 
 | case | reply |
 |---|---|
-| valid name + members + photo | `201 {"id":"<chatId>"}`, members are `[$B, $A]`: the creator is added by the server |
+| valid name + members + photo | `201 {"id":"<chatId>"}`, and `chat_members` holds `$A` and `$B`: the creator is added by the server |
 | the same request again | `201` and a different id — the same people may share many groups (`pairKey` is NULL for a group) |
 | `members` containing the caller | `400 {"code":400,"message":"the creator is already a member of the group"}` |
 | `members` with a valid UUID owned by nobody | `404 {"code":404,"message":"one or more of the members does not exist"}` |
@@ -240,7 +243,7 @@ Order of the checks. The photo is read only after the data part and the members 
 
 ---
 
-## 8. `setGroupName` — `PATCH /groups/{chatId}/name`
+## 8. `setGroupName` — `PATCH /groups/{groupId}/name`
 Two more fixtures: a group to rename, and a user who is not one of its members.
 ```shell
 C=$(curl -s -X POST localhost:3000/session -H 'Content-Type: application/json' -d "{\"username\":\"carl$R\"}" | id)
@@ -262,7 +265,7 @@ curl -i -X PATCH localhost:3000/groups/$G/name \
 | a caller who is not a member | `403 {"code":403,"message":"not a member of the group"}` |
 | a valid UUID owned by nobody | `404 {"code":404,"message":"group not found"}` |
 | the id of a private chat | `404 group not found` — a private chat borrows its name and owns none to update |
-| `/groups/not-a-uuid/name`, or the uppercase UUID | `400 {"code":400,"message":"invalid chat id"}` |
+| `/groups/not-a-uuid/name`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
 | `{"name":""}`, `{"name":"   "}`, `{}`, `{"name":null}`, 101 chars | `400 invalid request body` |
 | malformed or empty body | `400 invalid request body` |
 | `Content-Type: application/json` | identical result — the handler never reads the header (§12) |
@@ -288,7 +291,7 @@ Concurrency. Two members renaming at once both succeed and the last writer wins,
 
 ---
 
-## 9. `setGroupPhoto` — `PATCH /groups/{chatId}/photo` (multipart)
+## 9. `setGroupPhoto` — `PATCH /groups/{groupId}/photo` (multipart)
 ```shell
 curl -i -X PATCH localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG"
 ```
@@ -306,13 +309,13 @@ curl -i -X PATCH localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F
 | a caller who is not a member | `403 {"code":403,"message":"not a member of the group"}` |
 | a valid UUID owned by nobody | `404 {"code":404,"message":"group not found"}` |
 | the id of a private chat | `404 group not found` — a private chat borrows its photo and owns none to update |
-| `/groups/not-a-uuid/photo`, or the uppercase UUID | `400 {"code":400,"message":"invalid chat id"}` |
+| `/groups/not-a-uuid/photo`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
 | `GET` / `POST` on the same path | `405 Method Not Allowed` (§10) |
 | bad/absent token | §0, and nothing is written to `./db/photos` |
 
 The reply is a `GroupSummary`, like §8: replacing a photo never reads the messages, so no `snippet` is derived.
 
-No leaked files, including the refusals that come *after* the upload. Who may change the photo is a condition of the `UPDATE` itself, so a `403` and a `404` are only known once the bytes are already on disk; the handler deletes them on every failing branch, not just on `500`:
+No leaked files, including the refusals that come after the upload. Who may change the photo is a condition of the `UPDATE` itself, so a `403` and a `404` are only known once the bytes are already on disk; the handler deletes them on every failing branch, not just on `500`:
 ```shell
 ls db/photos | wc -l                                                    # before
 curl -s -X PATCH localhost:3000/groups/$G/photo -H "Authorization: Bearer $C" -F "photoFile=@$PNG"   # -> 403
@@ -329,7 +332,7 @@ curl -s -X PATCH localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F
 ls db/photos/$P1                                    # -> No such file
 ```
 
-403 vs 404, and why this one needs no extra read. `SetGroupPhoto` opens a transaction and reads the old `photoId` first, which is also the answer to *does a group own this id*: if that `SELECT` finds nothing it is a `404`, and the guarded `UPDATE` below is then left with the membership as the only condition that can fail, so `sql.ErrNoRows` there means `403`. §8 needs a second read after the failure because it has no such `SELECT` to reuse.
+403 vs 404, and why this one needs no extra read. `SetGroupPhoto` opens a transaction and reads the old `photoId` first, which is also the answer to "does a group own this id?": if that `SELECT` finds nothing it is a `404`, and the guarded `UPDATE` below is then left with the membership as the only condition that can fail, so `sql.ErrNoRows` there means `403`. §8 needs a second read after the failure because it has no such `SELECT` to reuse.
 
 The transaction is what makes the release safe: reading the old id and writing the new one are one step, so a concurrent update cannot make one caller delete a file the other has just put in use.
 
@@ -341,15 +344,17 @@ The transaction is what makes the release safe: reading the old id and writing t
 | request | reply |
 |---|---|
 | `GET /nope` | `404`, plain text |
-| `GET /session` (registered as POST) | `405 Method Not Allowed` + `Allow: POST` |
+| `GET /session` (registered as POST) | `405 Method Not Allowed` + `Allow: OPTIONS, POST` |
 | `GET /users/` (trailing slash) | `404` — `RedirectTrailingSlash` is off, so no redirect |
-| `OPTIONS /users` | `204` + `Allow`, and the CORS headers from `cmd/webapi/cors.go` |
+| `OPTIONS /users` | `200` and an empty body, with no `Allow` header: the CORS middleware of `cmd/webapi/cors.go` answers every preflight before the router sees it |
 
 CORS is worth one check, since the frontend depends on it:
 ```shell
 curl -i -X OPTIONS localhost:3000/me/username -H 'Origin: http://localhost:5173' \
   -H 'Access-Control-Request-Method: PATCH' -H 'Access-Control-Request-Headers: authorization,content-type'
-# -> Access-Control-Allow-Origin: *, Allow-Methods including PATCH, Allow-Headers with Authorization
+# -> 200, Access-Control-Allow-Origin: *, Access-Control-Allow-Methods: PATCH,
+#    Access-Control-Allow-Headers: Authorization,Content-Type, Access-Control-Max-Age: 1
+# The headers appear only when the request carries an Origin: a bare OPTIONS gets a plain 200
 ```
 
 ---

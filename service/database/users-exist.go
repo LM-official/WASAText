@@ -27,8 +27,8 @@ func (db *appdbimpl) UsersExist(userIds schemas.Members) (bool, error) {
 	}
 
 	var found int
+	// Error during the search
 	if err := db.c.QueryRow(`SELECT COUNT(*) FROM users WHERE id IN (`+placeholders+`);`, args...).Scan(&found); err != nil {
-		// Error during the search
 		return false, err
 	}
 

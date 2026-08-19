@@ -14,8 +14,8 @@ import (
 func (db *appdbimpl) CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatId, error) {
 	// Generate the new UUID
 	newUUID, err := uuid.NewV4()
+	// Error generating the UUID
 	if err != nil {
-		// Error generating the UUID
 		return schemas.ChatId(""), err
 	}
 	newId := schemas.ChatId(newUUID.String())
@@ -43,15 +43,15 @@ func (db *appdbimpl) CreateGroup(creator schemas.UserId, userIds schemas.Members
 
 	// A group chat owns its name and photo
 	_, err = tx.Exec(`INSERT INTO chats (id, chatType, name, photoId, pairKey) VALUES (?, ?, ?, ?, NULL);`, newId, schemas.ChatTypeGroup, name, photoId)
+	// Error inserting the new chat
 	if err != nil {
-		// Error inserting the new chat
 		return schemas.ChatId(""), err
 	}
 
 	// New chat created, update the memberships
 	_, err = tx.Exec(`INSERT INTO chat_members (chatId, userId) VALUES `+placeholders+`;`, args...)
+	// Error inserting the members
 	if err != nil {
-		// Error inserting the members
 		return schemas.ChatId(""), err
 	}
 

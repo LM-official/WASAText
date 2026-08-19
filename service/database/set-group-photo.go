@@ -28,12 +28,12 @@ func (db *appdbimpl) SetGroupPhoto(userId schemas.UserId, groupId schemas.ChatId
 	// The CHECK of the chats table gives every group a photo, so this column is never NULL here
 	var oldPhotoId schemas.PhotoId
 	err = tx.QueryRow(`SELECT photoId FROM chats WHERE id = ? AND chatType = ?;`, groupId, schemas.ChatTypeGroup).Scan(&oldPhotoId)
+	// No group owns that id
 	if errors.Is(err, sql.ErrNoRows) {
-		// No group owns that id
 		return schemas.ChatSummary{}, "", ErrChatNotFound
 	}
+	// Error fetching the current photo
 	if err != nil {
-		// Error fetching the current photo
 		return schemas.ChatSummary{}, "", err
 	}
 
@@ -44,13 +44,13 @@ func (db *appdbimpl) SetGroupPhoto(userId schemas.UserId, groupId schemas.ChatId
 		newPhotoId, groupId, schemas.ChatTypeGroup, groupId, userId,
 	).Scan(&chat.Id, &chat.Name, &chat.Photo)
 
+	// Nothing was updated, and the SELECT above already found the group:
+	// the condition left to fail is the one on the members, so the caller is not in the group
 	if errors.Is(err, sql.ErrNoRows) {
-		// Nothing was updated, and the SELECT above already found the group:
-		// the condition left to fail is the one on the members, so the caller is not in the group
 		return schemas.ChatSummary{}, "", ErrNotAMember
 	}
+	// Error during update
 	if err != nil {
-		// Error during update
 		return schemas.ChatSummary{}, "", err
 	}
 

@@ -16,8 +16,8 @@ func (db *appdbimpl) PhotoIsReferenced(photoId schemas.PhotoId) (bool, error) {
 						  OR EXISTS (SELECT 1 FROM chats WHERE photoId = ?)
 						  OR EXISTS (SELECT 1 FROM messages WHERE photoId = ?);`,
 		photoId, photoId, photoId).Scan(&referenced)
+	// Error during the search
 	if err != nil {
-		// Error during the search
 		return false, err
 	}
 	return referenced, nil

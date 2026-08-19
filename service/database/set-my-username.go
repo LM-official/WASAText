@@ -18,9 +18,9 @@ func (db *appdbimpl) SetMyUserName(userId schemas.UserId, newUsername schemas.Us
 	err := db.c.QueryRow(`UPDATE users SET username = ? WHERE id = ?
 						  RETURNING id, username, photoId;`, newUsername, userId).Scan(&user.Id, &user.Username, &user.Photo)
 	if err != nil {
+		var sqliteErr sqlite3.Error
 		// The username column is UNIQUE: its constraint is the only expected failure,
 		// and the api layer needs to answer 400 instead of 500 for it
-		var sqliteErr sqlite3.Error
 		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
 			return schemas.User{}, ErrUsernameTaken
 		}

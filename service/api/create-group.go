@@ -49,12 +49,13 @@ func (rt *_router) createGroup(w http.ResponseWriter, r *http.Request, ps httpro
 		}
 	}
 
-	// Every member must exist
+	// Every member must already exist
 	exist, err := rt.db.UsersExist(req.Members)
 	if err != nil {
 		writeError(w, ctx, http.StatusInternalServerError, "cannot verify the members", err)
 		return
 	}
+	// Some members do not exist
 	if !exist {
 		writeError(w, ctx, http.StatusNotFound, "one or more of the members does not exist", nil)
 		return

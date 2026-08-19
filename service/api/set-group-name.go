@@ -23,9 +23,9 @@ func (rt *_router) setGroupName(w http.ResponseWriter, r *http.Request, ps httpr
 	// it reaches the database only once it is a well formed id
 	// ByName returns a string, and an assignment needs one of the two types to be unnamed:
 	// string and ChatId are both named, so the conversion is what carries the id across
-	chatId := schemas.ChatId(ps.ByName("chatId"))
-	if err := chatId.IsValid(); err != nil {
-		writeError(w, ctx, http.StatusBadRequest, "invalid chat id", err)
+	groupId := schemas.ChatId(ps.ByName("groupId"))
+	if err := groupId.IsValid(); err != nil {
+		writeError(w, ctx, http.StatusBadRequest, "invalid group id", err)
 		return
 	}
 
@@ -37,7 +37,7 @@ func (rt *_router) setGroupName(w http.ResponseWriter, r *http.Request, ps httpr
 	}
 
 	// Query
-	chat, err := rt.db.SetGroupName(userId, chatId, req.Name)
+	chat, err := rt.db.SetGroupName(userId, groupId, req.Name)
 	if err != nil {
 		// No group owns that id: it may not exist at all, or be a private chat,
 		// which borrows its name from the other member and owns none to update

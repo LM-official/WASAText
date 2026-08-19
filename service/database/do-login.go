@@ -10,8 +10,8 @@ import (
 func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, error) {
 	// Generate the new UUID
 	newUUID, err := uuid.NewV4()
+	// Error generating the UUID
 	if err != nil {
-		// Error generating the UUID
 		return schemas.UserId(""), false, err
 	}
 	newId := schemas.UserId(newUUID.String())
@@ -22,8 +22,8 @@ func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, e
 	// so a second request asking for the same new username is a login and never a failure
 	res, err := db.c.Exec(`INSERT INTO users (id, username, photoId) VALUES (?, ?, ?)
 						   ON CONFLICT(username) DO NOTHING;`, newId, username, schemas.DefaultPhotoId)
+	// Error inserting the new user
 	if err != nil {
-		// Error inserting the new user
 		return schemas.UserId(""), false, err
 	}
 
@@ -34,8 +34,8 @@ func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, e
 	// No row written: the username is already taken by a user, and that user is the one logging in
 	if written == 0 {
 		var id schemas.UserId
+		// Error searching for the user
 		if err := db.c.QueryRow(`SELECT id FROM users WHERE username = ?;`, username).Scan(&id); err != nil {
-			// Error searching for the user
 			return schemas.UserId(""), false, err
 		}
 		// User found, login

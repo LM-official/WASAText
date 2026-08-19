@@ -25,16 +25,16 @@ func (db *appdbimpl) GetUsers(username schemas.Username) (schemas.Users, error) 
 
 	for rows.Next() {
 		var u schemas.User
+		// Error reading a row: a shorter list would be a wrong answer, not a partial one
 		if err := rows.Scan(&u.Id, &u.Username, &u.Photo); err != nil {
-			// Error reading a row: a shorter list would be a wrong answer, not a partial one
 			return nil, err
 		}
 
 		// Append to results
 		results = append(results, u)
 	}
+	// Error during rows iteration
 	if err := rows.Err(); err != nil {
-		// Error during rows iteration
 		return nil, err
 	}
 

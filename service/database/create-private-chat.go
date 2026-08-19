@@ -25,8 +25,8 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 
 	// Generate the new UUID
 	newUUID, err := uuid.NewV4()
+	// Error generating the UUID
 	if err != nil {
-		// Error generating the UUID
 		return schemas.ChatId(""), false, err
 	}
 	newId := schemas.ChatId(newUUID.String())
@@ -46,8 +46,8 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 	// a chat that is already there writes no row and raises no error
 	res, err := tx.Exec(`INSERT INTO chats (id, chatType, name, photoId, pairKey) VALUES (?, ?, NULL, NULL, ?)
 						 ON CONFLICT(pairKey) DO NOTHING;`, newId, schemas.ChatTypePrivate, key)
+	// Error inserting the new chat
 	if err != nil {
-		// Error inserting the new chat
 		return schemas.ChatId(""), false, err
 	}
 
@@ -67,8 +67,8 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 
 	// New chat created, update the memberships
 	_, err = tx.Exec(`INSERT INTO chat_members (chatId, userId) VALUES (?, ?), (?, ?);`, newId, userId1, newId, userId2)
+	// Error inserting the members
 	if err != nil {
-		// Error inserting the members
 		return schemas.ChatId(""), false, err
 	}
 

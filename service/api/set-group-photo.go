@@ -24,9 +24,9 @@ func (rt *_router) setGroupPhoto(w http.ResponseWriter, r *http.Request, ps http
 	// it reaches the database only once it is a well formed id
 	// ByName returns a string, and an assignment needs one of the two types to be unnamed:
 	// string and ChatId are both named, so the conversion is what carries the id across
-	chatId := schemas.ChatId(ps.ByName("chatId"))
-	if err := chatId.IsValid(); err != nil {
-		writeError(w, ctx, http.StatusBadRequest, "invalid chat id", err)
+	groupId := schemas.ChatId(ps.ByName("groupId"))
+	if err := groupId.IsValid(); err != nil {
+		writeError(w, ctx, http.StatusBadRequest, "invalid group id", err)
 		return
 	}
 
@@ -64,7 +64,7 @@ func (rt *_router) setGroupPhoto(w http.ResponseWriter, r *http.Request, ps http
 	}
 
 	// Query
-	chat, oldPhotoId, err := rt.db.SetGroupPhoto(userId, chatId, newPhotoId)
+	chat, oldPhotoId, err := rt.db.SetGroupPhoto(userId, groupId, newPhotoId)
 	if err != nil {
 		// Whatever the failure is, the new photo is on disk and no row points at it: drop it instead of leaking a file
 		if delErr := rt.photos.Delete(newPhotoId); delErr != nil {

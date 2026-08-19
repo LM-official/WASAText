@@ -18,24 +18,24 @@ func (db *appdbimpl) SetGroupName(userId schemas.UserId, groupId schemas.ChatId,
 		newName, groupId, schemas.ChatTypeGroup, groupId, userId,
 	).Scan(&chat.Id, &chat.Name, &chat.Photo)
 
+	// Nothing was updated: either no group owns that id, or the caller is not one of its members
+	// No transaction needed because this SELECT touches only immutable columns
 	if errors.Is(err, sql.ErrNoRows) {
-		// Nothing was updated: either no group owns that id, or the caller is not one of its members
-		// No transaction needed because this SELECT touches only immutable columns
 		err = db.c.QueryRow(`SELECT 1 FROM chats WHERE id = ? AND chatType = ?;`, groupId, schemas.ChatTypeGroup).Scan(new(int))
+		// No group owns that id
 		if errors.Is(err, sql.ErrNoRows) {
-			// No group owns that id
 			return schemas.ChatSummary{}, ErrChatNotFound
 		}
+		// Error reading the group
 		if err != nil {
-			// Error reading the group
 			return schemas.ChatSummary{}, err
 		}
 
 		// The caller is not in the group
 		return schemas.ChatSummary{}, ErrNotAMember
 	}
+	// Error during update
 	if err != nil {
-		// Error during update
 		return schemas.ChatSummary{}, err
 	}
 
