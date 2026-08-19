@@ -15,4 +15,8 @@ var (
 
 	// ErrNotAMember is returned when the chat exists but the caller does not belong to it
 	ErrNotAMember = errors.New("not a member of the chat")
+
+	// ErrGroupFull is returned when the members to add take the group past schemas.GroupMaxMembers
+	// The members already inside cost the group nothing: only the ones it actually gains are counted
+	ErrGroupFull = errors.New("group is full")
 )

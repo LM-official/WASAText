@@ -1,8 +1,8 @@
 # WASAText — endpoint tests
 Manual tests for the endpoints registered in `service/api/api-handler.go`:
-`doLogin`, `setMyUserName`, `setMyPhoto`, `getUsers`, `getPhoto`, `createPrivateChat`, `createGroup`, `setGroupName`, `setGroupPhoto`.
+`doLogin`, `setMyUserName`, `setMyPhoto`, `getUsers`, `getPhoto`, `createPrivateChat`, `createGroup`, `setGroupName`, `setGroupPhoto`, `addToGroup`.
 
-Last full run: 2026-08-19, every row below re-checked against a live server.
+Last full run: 2026-08-19, every row below re-checked against a live server. §10 (`addToGroup`) was added on the same date and checked the same way.
 
 ## Run
 ```shell
@@ -37,7 +37,7 @@ printf 'not an image' > /tmp/text.txt
 ---
 
 ## 0. Authentication — every endpoint but `doLogin`
-`service/api/api-authenticate.go` runs before the handler, so these answers are the same on `/me/username`, `/me/photo`, `/users`, `/photos/:photoId`, `/private-chats`, `/groups`, `/groups/:groupId/name` and `/groups/:groupId/photo`, and nothing is read or written when they fire.
+`service/api/api-authenticate.go` runs before the handler, so these answers are the same on `/me/username`, `/me/photo`, `/users`, `/photos/:photoId`, `/private-chats`, `/groups`, `/groups/:groupId/name`, `/groups/:groupId/photo` and `/groups/:groupId/members`, and nothing is read or written when they fire.
 
 | Authorization header | reply |
 |---|---|
@@ -73,7 +73,7 @@ curl -i -X POST localhost:3000/session -H 'Content-Type: application/json' -d "{
 | `{"username":"<30 chars>"}` | `201` |
 | `{"username":"<31 chars>"}` | `400` |
 | `{"username":` (truncated) or empty body | `400 invalid request body` |
-| `{"username":"carl$R","admin":true}` | `200`/`201` — unknown fields are ignored, see §12 |
+| `{"username":"carl$R","admin":true}` | `200`/`201` — unknown fields are ignored, see §13 |
 
 The returned id is the bearer token of every other test: this is the only point where `doLogin` and `authenticate` have to agree.
 
@@ -92,7 +92,7 @@ curl -i -X PATCH localhost:3000/me/username \
 | the username it already has | `200`, unchanged — updating a row to its own value is not a UNIQUE conflict |
 | `"bob$R"` (owned by B) | `400 {"code":400,"message":"username already taken"}`, nothing written |
 | `{"username":""}`, `{}`, `{"username":"a b"}`, 31 chars | `400 invalid request body` |
-| `Content-Type: application/json` | identical result — the handler never reads the header (§12) |
+| `Content-Type: application/json` | identical result — the handler never reads the header (§13) |
 | bad/absent token | §0, and the username is not touched |
 
 The `photo` field is a URL and never the stored id: `service/api/photo-url.go` is what turns one into the other. A user that never uploaded shows the default id.
@@ -111,7 +111,7 @@ curl -i "localhost:3000/users?username=alice" -H "Authorization: Bearer $A"
 | `?username=` or the parameter absent | `400 {"code":400,"message":"invalid username"}` |
 | `?username=a b` (invalid chars) | `400 invalid username` |
 | more than 20 matches | `200` with the first 20 (`LIMIT 20`) |
-| own username with own token | `200`, and the caller is in the list — see §13 |
+| own username with own token | `200`, and the caller is in the list — see §14 |
 
 LIKE escaping. `_` and `%` are LIKE wildcards and `_` is a legal username character, so `service/database/get-users.go` escapes the prefix:
 ```shell
@@ -184,7 +184,7 @@ curl -i localhost:3000/photos/00000000-0000-4000-8000-000000000000 -H "Authoriza
 | an existing id | `200`, `Content-Type: image/png`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=31536000, immutable` |
 | `/photos/not-a-uuid` | `400 {"code":400,"message":"invalid photo id"}` |
 | `/photos/..` or `/photos/a.b` | `400 invalid photo id` — an id is a canonical UUID, so it can hold no `.` |
-| `/photos/../../etc/passwd`, raw or percent-encoded | `404`, plain text — the extra segments match no route, so the router answers before the handler (§10) |
+| `/photos/../../etc/passwd`, raw or percent-encoded | `404`, plain text — the extra segments match no route, so the router answers before the handler (§11) |
 | a valid UUID with no file | `404 {"code":404,"message":"photo not found"}` |
 | no token | `401` — which is why the frontend cannot use a plain `<img src>` and has to fetch the bytes |
 
@@ -268,9 +268,9 @@ curl -i -X PATCH localhost:3000/groups/$G/name \
 | `/groups/not-a-uuid/name`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
 | `{"name":""}`, `{"name":"   "}`, `{}`, `{"name":null}`, 101 chars | `400 invalid request body` |
 | malformed or empty body | `400 invalid request body` |
-| `Content-Type: application/json` | identical result — the handler never reads the header (§12) |
-| `{"name":"x","admin":true}` | `200` — unknown fields are ignored (§12) |
-| `GET` / `POST` on the same path | `405 Method Not Allowed` (§10) |
+| `Content-Type: application/json` | identical result — the handler never reads the header (§13) |
+| `{"name":"x","admin":true}` | `200` — unknown fields are ignored (§13) |
+| `GET` / `POST` on the same path | `405 Method Not Allowed` (§11) |
 | bad/absent token | §0, and the name is not touched |
 
 The reply is a `GroupSummary`: renaming never reads the messages of the group, so the `snippet` derived from them.
@@ -310,7 +310,7 @@ curl -i -X PATCH localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F
 | a valid UUID owned by nobody | `404 {"code":404,"message":"group not found"}` |
 | the id of a private chat | `404 group not found` — a private chat borrows its photo and owns none to update |
 | `/groups/not-a-uuid/photo`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
-| `GET` / `POST` on the same path | `405 Method Not Allowed` (§10) |
+| `GET` / `POST` on the same path | `405 Method Not Allowed` (§11) |
 | bad/absent token | §0, and nothing is written to `./db/photos` |
 
 The reply is a `GroupSummary`, like §8: replacing a photo never reads the messages, so no `snippet` is derived.
@@ -338,7 +338,54 @@ The transaction is what makes the release safe: reading the old id and writing t
 
 ---
 
-## 10. Router level — the answers that are not JSON
+## 10. `addToGroup` — `POST /groups/{groupId}/members`
+```shell
+curl -i -X POST localhost:3000/groups/$G/members \
+  -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d "{\"members\":[\"$C\"]}"
+```
+
+| case | reply |
+|---|---|
+| a member adds one or more users | `200 {"id":"$G","chatType":"group","name":"...","photo":"/photos/<uuid>","members":[..]}` |
+| the other member adds | `200` — every member may add, a group has no owner |
+| a user already inside | `200`, and the list holds it once — `INSERT OR IGNORE` drops the repeated tuple |
+| the caller itself | `200`, unchanged — the caller is a member by definition |
+| `{"members":[]}` | `200` and the group as it stands — an empty list adds nobody |
+| `{}` or `{"members":null}` | `200`, same as the empty list — the field is not `required` in the spec either |
+| a caller who is not a member | `403 {"code":403,"message":"not a member of the group"}` |
+| a valid UUID owned by nobody | `404 {"code":404,"message":"group not found"}` |
+| the id of a private chat | `404 group not found` — its two members are its pair and it takes no more |
+| a member UUID owned by nobody | `404 {"code":404,"message":"one or more of the members does not exist"}` |
+| additions that take the group past 100 | `400 {"code":400,"message":"the group is full"}` |
+| `{"members":["nope"]}`, duplicate ids, 101 entries | `400 invalid request body` |
+| malformed or empty body | `400 invalid request body` |
+| `/groups/not-a-uuid/members`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
+| `GET` / `PATCH` / `DELETE` on the same path | `405 Method Not Allowed` + `Allow: OPTIONS, POST` (§11) |
+| bad/absent token | §0, and no membership is written |
+
+The reply is a `GroupWithMembers`: the summary plus the whole member list, and no messages, so no `snippet` is derived. The list is read after the `INSERT`, so its length is what the table holds and never what the request asked — adding 2 people to a group of 50 answers with 52.
+
+An empty list still answers for the group. The existence and the membership are checked before the write is skipped, so adding nobody is never a free `200`:
+```shell
+curl -i -X POST localhost:3000/groups/$G/members -H "Authorization: Bearer $C" \
+  -H 'Content-Type: application/json' -d '{"members":[]}'      # -> 403, not 200
+```
+
+The cap counts what the group gains, not what was asked. The count is taken after the insert, so members already inside cost nothing and a request that only repeats them is accepted at exactly 100; one that would pass 100 is rolled back whole and never in part:
+```shell
+# a group of 2, one request adding 99 different users
+curl -s -X POST localhost:3000/groups/$G/members -H "Authorization: Bearer $A" \
+  -H 'Content-Type: application/json' -d "{\"members\":[<99 ids>]}"        # -> 400 the group is full
+sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chat_members WHERE chatId='$G';"   # still 2
+```
+
+403 vs 404 in one read, unlike §8 and §9. The membership is a column of the reply and not a condition of the `WHERE`: no row means only "no group owns that id", and a row with a false `isMember` means "not a member". The other two put the membership inside the write, so they cannot tell the two apart without help.
+
+A member that does not exist is a `404` and not a `500`. The handler reads `UsersExist` first, as §7 does: without it an unknown id would only break the foreign key of `chat_members`, and a bad request would answer with a server error.
+
+---
+
+## 11. Router level — the answers that are not JSON
 `httprouter` replies before any handler, so these carry a plain text body and not the `Error` schema.
 
 | request | reply |
@@ -359,7 +406,7 @@ curl -i -X OPTIONS localhost:3000/me/username -H 'Origin: http://localhost:5173'
 
 ---
 
-## 11. Scenarios — a sequence, not a single call
+## 12. Scenarios — a sequence, not a single call
 S1 — the token of `doLogin` is accepted by `authenticate`. `doLogin "s1$R"` → `201` id; `GET /users?username=s1$R` with that id → `200`. Nothing else checks that the two endpoints agree.
 
 S2 — the token survives a rename. `doLogin "s2$R"` → id; `setMyUserName "s2b$R"` → `200`; `getUsers` with the same id → `200`. The token is the user id and the id never changes: a rename must not log anybody out.
@@ -378,9 +425,11 @@ S8 — a rename touches the name and nothing else. `createGroup` → G with phot
 
 S9 — the two kinds of chat stay apart under `/groups/`. A+B `createPrivateChat` → C; `setGroupName` on C → `404 group not found`, and the row of C still has `name` and `photoId` `NULL`. A `createGroup` with B → G; `setGroupName` on G → `200`. The same id space, two answers, and the `chats` CHECK is never reached because the `WHERE` filters on `chatType` first.
 
+S10 — a member added is a member for every other call. A `createGroup` with B → G; A `addToGroup` C → `200`; then C `setGroupName` on G → `200`, C `setGroupPhoto` → `200`, C `addToGroup` D → `200`. One row in `chat_members` is what all of them read, so joining grants the whole group surface and not only the list C appeared in.
+
 ---
 
-## 12. Known mismatches with `doc/api.yaml` (implemented endpoints only)
+## 13. Known mismatches with `doc/api.yaml` (implemented endpoints only)
 Open:
 - `additionalProperties: false` is not enforced. `encoding/json` ignores unknown fields, so `{"username":"x","admin":true}` is accepted. Fix: `dec.DisallowUnknownFields()` in `decodeAndValidate`.
 - The request `Content-Type` is never read. `application/json` works where the spec says `application/merge-patch+json`. Permissive, not wrong.
@@ -391,5 +440,5 @@ curl -s -X PATCH localhost:3000/groups/$G/name -H "Authorization: Bearer $A" \
 sqlite3 db/wasatext.db "SELECT length(name) FROM chats WHERE id='$G';"   # -> 104
 ```
 
-## 13. Open decisions
+## 14. Open decisions
 - The search returns the caller. Nothing filters the caller out of `getUsers`, and the frontend uses that list to open a private chat — where picking yourself is a `400`. Either the query adds `AND id != <caller>`, or the frontend hides the row.

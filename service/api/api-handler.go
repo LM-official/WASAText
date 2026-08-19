@@ -21,6 +21,7 @@ func (rt *_router) Handler() http.Handler {
 	rt.router.POST("/groups", rt.wrap(rt.authenticate(rt.createGroup)))
 	rt.router.PATCH("/groups/:groupId/name", rt.wrap(rt.authenticate(rt.setGroupName)))
 	rt.router.PATCH("/groups/:groupId/photo", rt.wrap(rt.authenticate(rt.setGroupPhoto)))
+	rt.router.POST("/groups/:groupId/members", rt.wrap(rt.authenticate(rt.addToGroup)))
 
 	// Special routes
 	rt.router.GET("/liveness", rt.liveness)

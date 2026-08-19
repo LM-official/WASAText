@@ -69,6 +69,11 @@ const (
 )
 
 type ChatName string // The group name, or the username of the other member in a private chat
+
+// GroupMaxMembers is how many members a group can hold at once
+// A private chat is always the two of its pair
+const GroupMaxMembers = 100
+
 type Members []UserId
 
 // ChatSummary is one element of the chats list: the preview of a chat
@@ -82,10 +87,15 @@ type ChatSummary struct {
 	Snippet *Snippet `json:"snippet,omitempty"` // Absent while the chat has no messages
 }
 
-// ChatDetail is an opened chat: the same summary + the members and the full messages list
-type ChatDetail struct {
+// ChatWithMembers is the summary + who belongs to the chat, and nothing else
+type ChatWithMembers struct {
 	ChatSummary
-	Members  Members  `json:"members"`
+	Members Members `json:"members"`
+}
+
+// ChatDetail is an opened chat: the summary + the members and the full messages list
+type ChatDetail struct {
+	ChatWithMembers
 	Messages Messages `json:"messages"`
 }
 

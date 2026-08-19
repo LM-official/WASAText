@@ -201,8 +201,8 @@ func (c *ChatSummary) IsValid() error {
 // Returns error if the Members list does not meets the rules, otherwise nil
 func (m Members) IsValid() error {
 	n := len(m)
-	if n > 100 {
-		return fmt.Errorf("invalid members number: %d; must be less than 100", n)
+	if n > GroupMaxMembers {
+		return fmt.Errorf("invalid members number: %d; must be at most %d", n, GroupMaxMembers)
 	}
 
 	// Ensure that each member appears only once in the list
@@ -221,17 +221,13 @@ func (m Members) IsValid() error {
 	return nil
 }
 
-// Returns error if the ChatDetail does not meets the rules, otherwise nil
-func (c *ChatDetail) IsValid() error {
+// Returns error if the ChatWithMembers does not meets the rules, otherwise nil
+func (c *ChatWithMembers) IsValid() error {
 	if c == nil {
-		return errors.New("chat detail is nil")
+		return errors.New("chat with members is nil")
 	}
 
 	if err := c.ChatSummary.IsValid(); err != nil {
-		return err
-	}
-
-	if err := c.Members.IsValid(); err != nil {
 		return err
 	}
 
@@ -243,9 +239,22 @@ func (c *ChatDetail) IsValid() error {
 		}
 
 	case ChatTypeGroup:
-		if len(c.Members) < 1 {
-			return errors.New("invalid group members: a group must have at least one member")
+		if n := len(c.Members); n < 1 {
+			return fmt.Errorf("invalid group members: %d; must be at least 1", n)
 		}
+	}
+
+	return c.Members.IsValid()
+}
+
+// Returns error if the ChatDetail does not meets the rules, otherwise nil
+func (c *ChatDetail) IsValid() error {
+	if c == nil {
+		return errors.New("chat detail is nil")
+	}
+
+	if err := c.ChatWithMembers.IsValid(); err != nil {
+		return err
 	}
 
 	return c.Messages.IsValid()
@@ -487,8 +496,8 @@ func (g *GroupRequest) IsValid() error {
 
 	// The request carries the other members only, the creator is added by the server:
 	// at least one other member, and one place less than the whole group, which the creator takes
-	if n := len(g.Members); n < 1 || n > 99 {
-		return fmt.Errorf("invalid group members: %d; must be between 1 and 99", n)
+	if n := len(g.Members); n < 1 || n > GroupMaxMembers-1 {
+		return fmt.Errorf("invalid group members: %d; must be between 1 and %d", n, GroupMaxMembers-1)
 	}
 
 	return g.Members.IsValid()

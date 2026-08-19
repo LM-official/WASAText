@@ -139,7 +139,7 @@ components:                                           # Reusable components
       example: 'Study Group'
 
     GroupSummary:
-      description: 'Standard group chat summary, without full messages list'
+      description: 'Standard group chat summary, without members and full messages list'
       allOf:                                          # Combines ChatSummary with the modifications below
         - $ref: '#/components/schemas/ChatSummary'    # Inherit everything from ChatSummary
         - type: object                                # Override type to object
@@ -159,8 +159,8 @@ components:                                           # Reusable components
               $ref: '#/components/schemas/PhotoURL'
       required: [chatType, name, photo]               # + id already required in ChatSummary
 
-    GroupDetail:
-      description: 'Standard group chat, with the members and the full messages list'
+    GroupWithMembers:
+      description: 'Standard group chat with its members, without the full messages list'
       allOf:                                          # Combines GroupSummary with the modifications below
         - $ref: '#/components/schemas/GroupSummary'   # Inherit everything from GroupSummary
         - type: object                                # Override type to object
@@ -173,6 +173,14 @@ components:                                           # Reusable components
               minItems: 1                             # A group that everybody left still has one member
               maxItems: 100
               uniqueItems: true                       # Ensure that each member could be once in the members list
+          required: [members]                         # + id, chatType, name, photo already required in GroupSummary
+
+    GroupDetail:
+      description: 'Standard group chat, with the members and the full messages list'
+      allOf:                                          # Combines GroupWithMembers with the modifications below
+        - $ref: '#/components/schemas/GroupWithMembers' # Inherit everything from GroupWithMembers
+        - type: object                                # Override type to object
+          properties:
             messages:
               description: 'List of all messages in the group chat'
               type: array
@@ -180,7 +188,7 @@ components:                                           # Reusable components
                 $ref: '#/components/schemas/Message'
               minItems: 0
               maxItems: 100000
-          required: [members, messages]               # + id, chatType, name, photo already required in GroupSummary
+          required: [messages]                        # + id, chatType, name, photo, members already required in GroupWithMembers
 
     PrivateChatSummary:
       description: 'Standard private chat summary, without members and full messages list'
@@ -1398,8 +1406,11 @@ paths:                                                # Rest endpoints
     post:
       operationId: 'addToGroup'
       description: |
-        Adds one or more users to an existing group chat the user is a member of.
-        If a user is already a member, they should be ignored
+        Adds one or more users to a group the authenticated user is a member of.
+        A user already inside is ignored, so the same request can be repeated without failing,
+        and an empty list is a request that adds nobody: it still answers for the group.
+        A private chat borrows its two members from its pair and takes no more,
+        so its id names nothing under this collection and is a 404 here.
       summary: 'Add users in a group'
       tags: ['Group']
       parameters:
@@ -1423,57 +1434,27 @@ paths:                                                # Rest endpoints
         required: true
       responses:
         '200':
-          description: 'New member added to the group successfully'
+          description: 'New members added to the group successfully'
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/GroupDetail'
+              schema:                                 # No messages list: adding members never reads them,
+                $ref: '#/components/schemas/GroupWithMembers' # and the snippet they derive is absent with them
               example:
                 id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
                 chatType: 'group'
                 name: 'Computer Science Study Group'
-                photo: 'https://api.wasatext.com/photos/cs_group.png'
+                photo: '/photos/d41f8a72-3b6c-4e19-8a52-0c7f5b21e934'
                 members: ['90b2c3d4-e5f6-42ec-a945-5fd21dec0538', '70b2c3d4-e5f6-42ec-a945-5fd21dec0538', '80b2c3d4-e5f6-42ec-a945-5fd21dec0538']
-                snippet:
-                  id: '25614180-65aa-42ac-a945-5fd21dec0538'
-                  content:
-                    text: 'The exam is next Monday at 9 AM.'
-                    emoji: '📷'
-                  date: '2025-11-10T09:05:00Z'
-                  user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                  state: 'received'
-                messages:
-                  - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                    content:
-                      text: 'Hey everyone, does anyone know the exam schedule?'
-                    date: '2025-11-10T09:00:00Z'
-                    user: '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                    state: 'read'
-                    comments: []
-                  - id: 'c56a4180-65aa-42ec-a945-5fa21dec0538'
-                    content:
-                      text: 'The exam is next Monday at 9 AM.'
-                      photo: 'https://api.wasatext.com/photos/exameSchedule.jpg'
-                    date: '2025-11-10T09:05:00Z'
-                    user: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                    state: 'received'
-                    comments: []
-        '400':
+        '400':                                        # Malformed body, or the additions do not fit the group
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
+        '403':                                        # Not a member of the group
           $ref: '#/components/responses/Forbidden'
-        '404':
+        '404':                                        # No group owns that id, or one of the members does not exist
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
 
   /groups/{groupId}/members/me:
     delete:

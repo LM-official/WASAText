@@ -54,6 +54,7 @@ type AppDatabase interface {
 	CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatId, error)
 	SetGroupName(userId schemas.UserId, groupId schemas.ChatId, newName schemas.ChatName) (schemas.ChatSummary, error)
 	SetGroupPhoto(userId schemas.UserId, groupId schemas.ChatId, newPhotoId schemas.PhotoId) (schemas.ChatSummary, schemas.PhotoId, error)
+	AddToGroup(userId schemas.UserId, groupId schemas.ChatId, userIds schemas.Members) (schemas.ChatWithMembers, error)
 
 	// My helpers
 	UsersExist(userIds schemas.Members) (bool, error)
