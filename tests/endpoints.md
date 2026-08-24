@@ -1,8 +1,15 @@
 # WASAText — endpoint tests
 Manual tests for the endpoints registered in `service/api/api-handler.go`:
-`doLogin`, `setMyUserName`, `setMyPhoto`, `getUsers`, `getPhoto`, `createPrivateChat`, `createGroup`, `setGroupName`, `setGroupPhoto`, `addToGroup`.
+`doLogin`, `setMyUserName`, `setMyPhoto`, `getUsers`, `getPhoto`, `createPrivateChat`, `createGroup`, `setGroupName`, `setGroupPhoto`, `addToGroup`, `leaveGroup`.
 
-Last full run: 2026-08-19, every row below re-checked against a live server. §10 (`addToGroup`) was added on the same date and checked the same way.
+Last full run: 2026-08-19, every row below re-checked against a live server.
+
+§11 (`leaveGroup`) was added on 2026-08-24 and checked on its own that day: 57 assertions against a freshly built binary and an empty database, all green, and the server log carried no warning and no unexpected error. The sections after it were renumbered. Its run used an isolated database so nothing earlier could colour the result:
+```shell
+go build -o /tmp/webapi ./cmd/webapi/
+/tmp/webapi --db-filename /tmp/wasa-test/wasatext.db --photos-directory /tmp/wasa-test/photos
+```
+The `sqlite3` and `ls db/photos` commands in §11 assume the default paths; point them at that directory instead when running it the isolated way.
 
 ## Run
 ```shell
@@ -37,7 +44,7 @@ printf 'not an image' > /tmp/text.txt
 ---
 
 ## 0. Authentication — every endpoint but `doLogin`
-`service/api/api-authenticate.go` runs before the handler, so these answers are the same on `/me/username`, `/me/photo`, `/users`, `/photos/:photoId`, `/private-chats`, `/groups`, `/groups/:groupId/name`, `/groups/:groupId/photo` and `/groups/:groupId/members`, and nothing is read or written when they fire.
+`service/api/api-authenticate.go` runs before the handler, so these answers are the same on `/me/username`, `/me/photo`, `/users`, `/photos/:photoId`, `/private-chats`, `/groups`, `/groups/:groupId/name`, `/groups/:groupId/photo`, `/groups/:groupId/members` and `/groups/:groupId/members/me`, and nothing is read or written when they fire.
 
 | Authorization header | reply |
 |---|---|
@@ -73,7 +80,7 @@ curl -i -X POST localhost:3000/session -H 'Content-Type: application/json' -d "{
 | `{"username":"<30 chars>"}` | `201` |
 | `{"username":"<31 chars>"}` | `400` |
 | `{"username":` (truncated) or empty body | `400 invalid request body` |
-| `{"username":"carl$R","admin":true}` | `200`/`201` — unknown fields are ignored, see §13 |
+| `{"username":"carl$R","admin":true}` | `200`/`201` — unknown fields are ignored, see §14 |
 
 The returned id is the bearer token of every other test: this is the only point where `doLogin` and `authenticate` have to agree.
 
@@ -92,7 +99,7 @@ curl -i -X PATCH localhost:3000/me/username \
 | the username it already has | `200`, unchanged — updating a row to its own value is not a UNIQUE conflict |
 | `"bob$R"` (owned by B) | `400 {"code":400,"message":"username already taken"}`, nothing written |
 | `{"username":""}`, `{}`, `{"username":"a b"}`, 31 chars | `400 invalid request body` |
-| `Content-Type: application/json` | identical result — the handler never reads the header (§13) |
+| `Content-Type: application/json` | identical result — the handler never reads the header (§14) |
 | bad/absent token | §0, and the username is not touched |
 
 The `photo` field is a URL and never the stored id: `service/api/photo-url.go` is what turns one into the other. A user that never uploaded shows the default id.
@@ -111,7 +118,7 @@ curl -i "localhost:3000/users?username=alice" -H "Authorization: Bearer $A"
 | `?username=` or the parameter absent | `400 {"code":400,"message":"invalid username"}` |
 | `?username=a b` (invalid chars) | `400 invalid username` |
 | more than 20 matches | `200` with the first 20 (`LIMIT 20`) |
-| own username with own token | `200`, and the caller is in the list — see §14 |
+| own username with own token | `200`, and the caller is in the list — see §15 |
 
 LIKE escaping. `_` and `%` are LIKE wildcards and `_` is a legal username character, so `service/database/get-users.go` escapes the prefix:
 ```shell
@@ -184,7 +191,7 @@ curl -i localhost:3000/photos/00000000-0000-4000-8000-000000000000 -H "Authoriza
 | an existing id | `200`, `Content-Type: image/png`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=31536000, immutable` |
 | `/photos/not-a-uuid` | `400 {"code":400,"message":"invalid photo id"}` |
 | `/photos/..` or `/photos/a.b` | `400 invalid photo id` — an id is a canonical UUID, so it can hold no `.` |
-| `/photos/../../etc/passwd`, raw or percent-encoded | `404`, plain text — the extra segments match no route, so the router answers before the handler (§11) |
+| `/photos/../../etc/passwd`, raw or percent-encoded | `404`, plain text — the extra segments match no route, so the router answers before the handler (§12) |
 | a valid UUID with no file | `404 {"code":404,"message":"photo not found"}` |
 | no token | `401` — which is why the frontend cannot use a plain `<img src>` and has to fetch the bytes |
 
@@ -268,9 +275,9 @@ curl -i -X PATCH localhost:3000/groups/$G/name \
 | `/groups/not-a-uuid/name`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
 | `{"name":""}`, `{"name":"   "}`, `{}`, `{"name":null}`, 101 chars | `400 invalid request body` |
 | malformed or empty body | `400 invalid request body` |
-| `Content-Type: application/json` | identical result — the handler never reads the header (§13) |
-| `{"name":"x","admin":true}` | `200` — unknown fields are ignored (§13) |
-| `GET` / `POST` on the same path | `405 Method Not Allowed` (§11) |
+| `Content-Type: application/json` | identical result — the handler never reads the header (§14) |
+| `{"name":"x","admin":true}` | `200` — unknown fields are ignored (§14) |
+| `GET` / `POST` on the same path | `405 Method Not Allowed` (§12) |
 | bad/absent token | §0, and the name is not touched |
 
 The reply is a `GroupSummary`: renaming never reads the messages of the group, so the `snippet` derived from them.
@@ -310,7 +317,7 @@ curl -i -X PATCH localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F
 | a valid UUID owned by nobody | `404 {"code":404,"message":"group not found"}` |
 | the id of a private chat | `404 group not found` — a private chat borrows its photo and owns none to update |
 | `/groups/not-a-uuid/photo`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
-| `GET` / `POST` on the same path | `405 Method Not Allowed` (§11) |
+| `GET` / `POST` on the same path | `405 Method Not Allowed` (§12) |
 | bad/absent token | §0, and nothing is written to `./db/photos` |
 
 The reply is a `GroupSummary`, like §8: replacing a photo never reads the messages, so no `snippet` is derived.
@@ -360,7 +367,7 @@ curl -i -X POST localhost:3000/groups/$G/members \
 | `{"members":["nope"]}`, duplicate ids, 101 entries | `400 invalid request body` |
 | malformed or empty body | `400 invalid request body` |
 | `/groups/not-a-uuid/members`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
-| `GET` / `PATCH` / `DELETE` on the same path | `405 Method Not Allowed` + `Allow: OPTIONS, POST` (§11) |
+| `GET` / `PATCH` / `DELETE` on the same path | `405 Method Not Allowed` + `Allow: OPTIONS, POST` (§12) |
 | bad/absent token | §0, and no membership is written |
 
 The reply is a `GroupWithMembers`: the summary plus the whole member list, and no messages, so no `snippet` is derived. The list is read after the `INSERT`, so its length is what the table holds and never what the request asked — adding 2 people to a group of 50 answers with 52.
@@ -385,7 +392,60 @@ A member that does not exist is a `404` and not a `500`. The handler reads `User
 
 ---
 
-## 11. Router level — the answers that are not JSON
+## 11. `leaveGroup` — `DELETE /groups/{groupId}/members/me`
+`me` is the caller and not a parameter: a member removes itself, and removing anybody else is not an operation this API has. A fourth fixture `D` is used below as the outsider.
+
+```shell
+D=$(curl -s -X POST localhost:3000/session -H 'Content-Type: application/json' -d "{\"username\":\"dave$R\"}" | id)
+G=$(curl -s -X POST localhost:3000/groups -H "Authorization: Bearer $A" \
+  -F "data={\"name\":\"Leave $R\",\"members\":[\"$B\",\"$C\"]};type=application/json" -F "photoFile=@$PNG" | id)
+
+curl -i -X DELETE localhost:3000/groups/$G/members/me -H "Authorization: Bearer $A"
+```
+
+| case | reply |
+|---|---|
+| a member of three leaves | `200 {"id":"$G","chatType":"group","name":"...","photo":"/photos/<uuid>","members":[<the other two>]}` |
+| the same caller leaves again | `403 {"code":403,"message":"not a member of the group"}` — it is no longer one of them |
+| a caller who was never a member | `403 not a member of the group` |
+| the last member leaves | `200` with `"members":[]`, and the group is gone (see below) |
+| any call on a group already emptied | `404 {"code":404,"message":"group not found"}` — the row went with the last member |
+| a valid UUID owned by nobody | `404 group not found` |
+| the id of a private chat | `404 group not found` — its two members are its pair, and neither leaves it |
+| `/groups/not-a-uuid/members/me`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
+| `GET` / `POST` / `PATCH` / `PUT` on the same path | `405 Method Not Allowed` + `Allow: DELETE, OPTIONS` (§12) |
+| `DELETE /groups/{groupId}/members` (without `/me`) | `405` — that path is `POST` only, and `POST` on it still answers `200`: the two routes do not collide |
+| bad/absent token | §0, and no membership is removed |
+
+The reply is a `GroupWithMembers`, like §10, and 403 vs 404 come from one read for the same reason. The list is read after the `DELETE`, so it is what the caller leaves behind and never includes the caller, and it is built with `make`, so an emptied group answers `"members":[]` and never `nil`.
+
+The last member out drops the group: nobody can reach it again, so it goes with the caller, and its messages follow through the `ON DELETE CASCADE` of the `messages` table. No membership is left to cascade, the one this call removed being the last.
+```shell
+G2=$(curl -s -X POST localhost:3000/groups -H "Authorization: Bearer $A" \
+  -F "data={\"name\":\"Drop $R\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+GP=$(sqlite3 db/wasatext.db "SELECT photoId FROM chats WHERE id='$G2';")
+
+curl -s -X DELETE localhost:3000/groups/$G2/members/me -H "Authorization: Bearer $A"   # -> "members":["$B"]
+ls db/photos/$GP                                                                       # -> still there
+curl -s -X DELETE localhost:3000/groups/$G2/members/me -H "Authorization: Bearer $B"   # -> "members":[]
+sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chats WHERE id='$G2';"                    # -> 0
+sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chat_members WHERE chatId='$G2';"         # -> 0
+ls db/photos/$GP                                                                       # -> No such file
+```
+
+Garbage collection, as in §4 and §9. The handler writes no condition: `releasePhoto` asks `PhotoIsReferenced`, so a leave that keeps the group keeps the photo, a photo another row shows survives the group, and the default one is never collected.
+
+Nothing is written when a call is refused: after a `403`, `SELECT COUNT(*) FROM chat_members WHERE chatId='$G'` and `ls db/photos | wc -l` are both what they were.
+
+Concurrency. The read of the membership, its removal and the drop of the group are one transaction: without it the last two members leaving at once would each still find the other inside, and neither would drop the group. Run the two leaves with `&` and check no row is stranded:
+```shell
+sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chats c WHERE c.id='$G2'
+  AND NOT EXISTS (SELECT 1 FROM chat_members WHERE chatId=c.id);"       # -> 0
+```
+
+---
+
+## 12. Router level — the answers that are not JSON
 `httprouter` replies before any handler, so these carry a plain text body and not the `Error` schema.
 
 | request | reply |
@@ -406,7 +466,7 @@ curl -i -X OPTIONS localhost:3000/me/username -H 'Origin: http://localhost:5173'
 
 ---
 
-## 12. Scenarios — a sequence, not a single call
+## 13. Scenarios — a sequence, not a single call
 S1 — the token of `doLogin` is accepted by `authenticate`. `doLogin "s1$R"` → `201` id; `GET /users?username=s1$R` with that id → `200`. Nothing else checks that the two endpoints agree.
 
 S2 — the token survives a rename. `doLogin "s2$R"` → id; `setMyUserName "s2b$R"` → `200`; `getUsers` with the same id → `200`. The token is the user id and the id never changes: a rename must not log anybody out.
@@ -427,9 +487,13 @@ S9 — the two kinds of chat stay apart under `/groups/`. A+B `createPrivateChat
 
 S10 — a member added is a member for every other call. A `createGroup` with B → G; A `addToGroup` C → `200`; then C `setGroupName` on G → `200`, C `setGroupPhoto` → `200`, C `addToGroup` D → `200`. One row in `chat_members` is what all of them read, so joining grants the whole group surface and not only the list C appeared in.
 
+S11 — leaving takes the whole group surface away, the inverse of S10. A `createGroup` with B and C → G; C `leaveGroup` → `200`; then C `setGroupName` → `403`, C `setGroupPhoto` → `403`, C `addToGroup` → `403`, C `leaveGroup` again → `403`. The same row that granted everything is the one just removed.
+
+S12 — a group outlives every member but the last. A `createGroup` with B → G with photo P; A `leaveGroup` → `200` and `members` is `[B]`, `getPhoto P` → `200`; B `leaveGroup` → `200` and `members` is `[]`, `getPhoto P` → `404`, and G is a `404` for both of them. The group is dropped exactly once, by the member that empties it, and its photo goes with it.
+
 ---
 
-## 13. Known mismatches with `doc/api.yaml` (implemented endpoints only)
+## 14. Known mismatches with `doc/api.yaml` (implemented endpoints only)
 Open:
 - `additionalProperties: false` is not enforced. `encoding/json` ignores unknown fields, so `{"username":"x","admin":true}` is accepted. Fix: `dec.DisallowUnknownFields()` in `decodeAndValidate`.
 - The request `Content-Type` is never read. `application/json` works where the spec says `application/merge-patch+json`. Permissive, not wrong.
@@ -440,5 +504,5 @@ curl -s -X PATCH localhost:3000/groups/$G/name -H "Authorization: Bearer $A" \
 sqlite3 db/wasatext.db "SELECT length(name) FROM chats WHERE id='$G';"   # -> 104
 ```
 
-## 14. Open decisions
+## 15. Open decisions
 - The search returns the caller. Nothing filters the caller out of `getUsers`, and the frontend uses that list to open a private chat — where picking yourself is a `400`. Either the query adds `AND id != <caller>`, or the frontend hides the row.

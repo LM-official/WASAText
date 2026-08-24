@@ -63,9 +63,9 @@ func (rt *_router) setMyPhoto(w http.ResponseWriter, r *http.Request, ps httprou
 		return
 	}
 
-	// Response
-	writeJSON(w, ctx, http.StatusOK, withPhotoURL(user))
-
 	// The replaced photo is garbage now, unless something else still shows it
 	rt.releasePhoto(oldPhotoId, ctx)
+
+	// Response
+	writeJSON(w, ctx, http.StatusOK, withPhotoURL(user))
 }

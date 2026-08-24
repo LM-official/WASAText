@@ -5,7 +5,10 @@ package schemas
 // a field without a column is derived at query time and never written,
 // a column without a field is context, not content
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // ---------- ERROR ----------
 // No table: an error is built by the api layer when a request fails, and never stored
@@ -41,10 +44,18 @@ type PhotoURL string
 // DefaultPhotoId is the photo id a new user starts with
 const DefaultPhotoId PhotoId = "00000000-0000-4000-8000-000000000000"
 
+// PhotoPathPrefix is what a PhotoURL holds before the id of the photo
+const PhotoPathPrefix = "/photos/"
+
 // The URL is relative: the client already knows the host it is talking to,
 // while the server behind a proxy or on another port does not know its own
 func (i PhotoId) URL() PhotoURL {
-	return PhotoURL("/photos/" + i)
+	return PhotoURL(PhotoPathPrefix + i)
+}
+
+// Id gives back the PhotoId the PhotoURL points at
+func (p PhotoURL) Id() PhotoId {
+	return PhotoId(strings.TrimPrefix(string(p), PhotoPathPrefix))
 }
 
 // ---------- USER ----------

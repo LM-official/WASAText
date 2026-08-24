@@ -8,7 +8,7 @@ import "github.com/MercuriLorenzo/WASAText/service/schemas"
 
 // withPhotoURL turns the stored photo id of a user into the URL the API returns
 func withPhotoURL(u schemas.User) schemas.User {
-	u.Photo = schemas.PhotoId(u.Photo).URL()
+	u.Photo = u.Photo.Id().URL()
 	return u
 }
 
@@ -22,6 +22,6 @@ func withPhotoURLs(us schemas.Users) schemas.Users {
 
 // withChatPhotoURL turns the stored photo id of a chat into the URL the API returns
 func withChatPhotoURL(c schemas.ChatSummary) schemas.ChatSummary {
-	c.Photo = schemas.PhotoId(c.Photo).URL()
+	c.Photo = c.Photo.Id().URL()
 	return c
 }
