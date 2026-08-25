@@ -98,6 +98,8 @@ type ChatSummary struct {
 	Snippet *Snippet `json:"snippet,omitempty"` // Absent while the chat has no messages
 }
 
+type Chats []ChatSummary
+
 // ChatWithMembers is the summary + who belongs to the chat, and nothing else
 type ChatWithMembers struct {
 	ChatSummary
@@ -154,6 +156,14 @@ type Comments []Comment
 // ---------- SNIPPET ----------
 // No table: a snippet is always derived from the last message of a chat
 // It is the preview shown in the chats list of the homepage
+
+// SnippetMaxChars is how much of the text of a message reaches its snippet
+const SnippetMaxChars = 50
+
+// SnippetPhotoEmoji stands for the photo of a message in its snippet:
+// the preview carries a symbol where the opened chat carries the actual picture
+const SnippetPhotoEmoji Emoji = "📷"
+
 type SnippetText string
 type SnippetContent struct {
 	Text  SnippetText `json:"text,omitempty"`

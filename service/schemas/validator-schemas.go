@@ -82,6 +82,32 @@ func CountChars(s string) int {
 	return uniseg.GraphemeClusterCount(strings.TrimSpace(s))
 }
 
+// TruncateChars trims a string and keeps its first n chars, counted as CountChars counts them
+// Cutting on bytes or on runes would split an emoji in half and leave a broken symbol behind,
+// so the cut falls on the boundary between two chars and never inside one
+func TruncateChars(s string, n int) string {
+	// No chars
+	if n <= 0 {
+		return ""
+	}
+
+	s = strings.TrimSpace(s)
+
+	state := -1
+	rest := s
+	// Iterate one char at a time
+	for i := 0; i < n; i++ {
+		if len(rest) == 0 {
+			return s
+		}
+
+		_, rest, _, state = uniseg.FirstGraphemeClusterInString(rest, state)
+	}
+
+	// rest is what comes after the nth char
+	return s[:len(s)-len(rest)]
+}
+
 // ---------- PHOTO ----------
 // Returns error if the uploaded file does not meets the rules, otherwise nil
 func (p PhotoFile) IsValid() error {
@@ -412,8 +438,8 @@ func (c Comments) IsValid() error {
 // Returns error if the SnippetText does not meets the rules, otherwise nil
 func (t SnippetText) IsValid() error {
 	n := CountChars(string(t))
-	if n < 1 || n > 50 {
-		return fmt.Errorf("invalid snippet text length: %d; must be between 1 and 50 characters", n)
+	if n < 1 || n > SnippetMaxChars {
+		return fmt.Errorf("invalid snippet text length: %d; must be between 1 and %d characters", n, SnippetMaxChars)
 	}
 	return nil
 }

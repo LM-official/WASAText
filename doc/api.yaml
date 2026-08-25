@@ -126,8 +126,8 @@ components:                                           # Reusable components
       properties:
         id:
           $ref: '#/components/schemas/ChatId'
-        snippet:                                      # Absent while the chat has no messages
-          $ref: '#/components/schemas/Snippet'
+        snippet:                                      # Absent while the chat has no message, and while its last
+          $ref: '#/components/schemas/Snippet'        # One carries nothing to preview: a snippet always has content
       required: [id]
 
     GroupName:
@@ -253,9 +253,11 @@ components:                                           # Reusable components
           $ref: '#/components/schemas/UserId'
         state:
           description: |
-            Message state,
-            received: message received by all chat members,
-            read: message read by all chat members
+            Message state, computed and never stored:
+            read: every member (excluded the sender) has opened the chat after the message arrived,
+            received: at least one of them has not.
+            The value is a fact about the members and not about the caller,
+            so it is the same for everybody looking at the chat
           type: string
           pattern: '^.{4,8}$'                         # 4-8 chars as 'read' or 'received'
           minLength: 4
@@ -305,15 +307,16 @@ components:                                           # Reusable components
         - type: object                                # Override type to object
           properties:
             content:
-              description: 'Summary of the content of a message, text summary or emoji representing the media'
+              description: |
+                Summary of the content of a message: the head of its text, a symbol standing for its media, or both,
+                exactly as the message carries text, a photo, or both
               type: object
               properties:
                 text:
                   allOf:
                     - $ref: '#/components/schemas/MessageText'
-                    - maxLength: 50                   # First 50 chars of the message
-                emoji:
-                  $ref: '#/components/schemas/Emoji'
+                    - maxLength: 50
+                  $ref: '#/components/schemas/Emoji'  # A symbol where the opened chat carries the picture
               minProperties: 1                        # At least one of text/emoji is present
           required: [content]                         # + id (the message this snippet previews), date, user, state already required in MessageBase
 
@@ -759,10 +762,17 @@ paths:                                                # Rest endpoints
 
 
   # Every chat endpoints
-  /chats:
-    get:
+  /me/chats:
+    get:                                              # One row per membership, and no one else can address it
       operationId: 'getMyConversations'
-      description: 'Retrieves a list of all private chats and groups the user belongs to'
+      description: |
+        Retrieves every private chat and group the authenticated user belongs to,
+        the most recently active first: the sort key is the date of the last message,
+        and a chat holding no message has none and comes last.
+        A group carries the name and the photo it owns,
+        a private chat carries the ones of the other member, so the same chat reads differently for each of the two.
+        Every chat carries the preview of its last message, and none while it holds no message
+        or while that message carries nothing a preview could show.
       summary: 'Get all user chats'
       tags: ['PrivateChat', 'Group']
       responses:
@@ -778,21 +788,24 @@ paths:                                                # Rest endpoints
                     description: 'List of user chats'
                     type: array
                     items:
-                      oneOf:                              # chats without full messages list
+                      oneOf:                              # hats without full messages list
                         - $ref: '#/components/schemas/GroupSummary'
                         - $ref: '#/components/schemas/PrivateChatSummary'
-                    minItems: 0
-                    maxItems: 10000
+                    minItems: 1                           # An empty list is a 404
+                    maxItems: 500
+                    uniqueItems: true                     # One row per chat: a membership cannot be held twice
+                required: [chats]
+                additionalProperties: false               # No other properties allowed
               example:
                 chats:
                   - id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
                     chatType: 'private'
-                    # Alice's POV
+                    # Alice's POV: the name and the photo are Bob's own
                     name: 'Bob'
-                    photo: 'https://api.wasatext.com/photos/bob.png'
+                    photo: '/photos/d41f8a72-3b6c-4e19-8a52-0c7f5b21e934'
                     snippet:
                       id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-                      content:
+                      content:                            # Text and photo: the message carried both
                         text: 'Hey, are you free tonight?'
                         emoji: '📷'
                       date: '2025-11-15T18:30:00Z'
@@ -801,24 +814,24 @@ paths:                                                # Rest endpoints
                   - id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
                     chatType: 'group'
                     name: 'Weekend Trip'
-                    photo: 'https://api.wasatext.com/photos/trip.png'
+                    photo: '/photos/7b9d3f21-4c8e-4a55-9f10-2ed6c4b7a318'
                     snippet:
                       id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                      content:
+                      content:                            # Text only: no photo to stand for
                         text: 'I booked the hotel!'
                       date: '2025-11-15T19:00:00Z'
                       user: 'cf6ad480-65aa-42ec-a945-5fd21dec0538'
                       state: 'received'
+                  - id: '3f1a9c22-70b4-4d18-9a63-1c8e5f0b7d41'
+                    chatType: 'group'                     # No snippet: nobody has written in this group yet,
+                    name: 'Study Group'                   # which is also why it sorts last
+                    photo: '/photos/a5c04e88-1f37-4d62-b083-6e9a12c4df70'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':                                        # The caller belongs to no chat: an empty list is never a 200
+          $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
         
   /chats/{chatId}:
     get:

@@ -25,3 +25,11 @@ func withChatPhotoURL(c schemas.ChatSummary) schemas.ChatSummary {
 	c.Photo = c.Photo.Id().URL()
 	return c
 }
+
+// withChatPhotoURLs is withChatPhotoURL over a list of chats
+func withChatPhotoURLs(cs schemas.Chats) schemas.Chats {
+	for i := range cs {
+		cs[i] = withChatPhotoURL(cs[i])
+	}
+	return cs
+}

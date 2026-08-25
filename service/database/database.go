@@ -39,9 +39,16 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 )
+
+// dateFormat is how every date column of the schema below is written and read
+// It holds no sub-second part, so every stored date has the same width and text order is chronological order,
+// which is what lets a query sort a chat and find its last message without parsing anything
+// Write it in UTC: an offset other than Z would sort by its own digits and not by the instant
+const dateFormat = time.RFC3339
 
 // AppDatabase is the high level interface for the DB
 type AppDatabase interface {
@@ -50,6 +57,7 @@ type AppDatabase interface {
 	SetMyUserName(userId schemas.UserId, newUsername schemas.Username) (schemas.User, error)
 	SetMyPhoto(userId schemas.UserId, newPhotoId schemas.PhotoId) (schemas.User, schemas.PhotoId, error)
 	GetUsers(username schemas.Username) (schemas.Users, error)
+	GetMyConversations(userId schemas.UserId) (schemas.Chats, error)
 	CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.UserId) (schemas.ChatId, bool, error)
 	CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatId, error)
 	SetGroupName(userId schemas.UserId, groupId schemas.ChatId, newName schemas.ChatName) (schemas.ChatSummary, error)

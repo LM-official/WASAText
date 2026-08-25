@@ -16,13 +16,16 @@ func (rt *_router) Handler() http.Handler {
 	rt.router.PATCH("/me/username", rt.wrap(rt.authenticate(rt.setMyUserName)))
 	rt.router.PATCH("/me/photo", rt.wrap(rt.authenticate(rt.setMyPhoto)))
 	rt.router.GET("/users", rt.wrap(rt.authenticate(rt.getUsers)))
-	rt.router.GET("/photos/:photoId", rt.wrap(rt.authenticate(rt.getPhoto)))
+	rt.router.GET("/me/chats", rt.wrap(rt.authenticate(rt.getMyConversations)))
 	rt.router.POST("/private-chats", rt.wrap(rt.authenticate(rt.createPrivateChat)))
 	rt.router.POST("/groups", rt.wrap(rt.authenticate(rt.createGroup)))
 	rt.router.PATCH("/groups/:groupId/name", rt.wrap(rt.authenticate(rt.setGroupName)))
 	rt.router.PATCH("/groups/:groupId/photo", rt.wrap(rt.authenticate(rt.setGroupPhoto)))
 	rt.router.POST("/groups/:groupId/members", rt.wrap(rt.authenticate(rt.addToGroup)))
 	rt.router.DELETE("/groups/:groupId/members/me", rt.wrap(rt.authenticate(rt.leaveGroup)))
+
+	// My helpers
+	rt.router.GET("/photos/:photoId", rt.wrap(rt.authenticate(rt.getPhoto)))
 
 	// Special routes
 	rt.router.GET("/liveness", rt.liveness)
