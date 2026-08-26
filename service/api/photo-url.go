@@ -21,15 +21,17 @@ func withPhotoURLs(us schemas.Users) schemas.Users {
 }
 
 // withChatPhotoURL turns the stored photo id of a chat into the URL the API returns
-func withChatPhotoURL(c schemas.ChatSummary) schemas.ChatSummary {
+// It takes the base every chat shape is built on, so one call covers the summary,
+// the chat with its members and the opened chat alike
+func withChatPhotoURL(c schemas.ChatBase) schemas.ChatBase {
 	c.Photo = c.Photo.Id().URL()
 	return c
 }
 
 // withChatPhotoURLs is withChatPhotoURL over a list of chats
-func withChatPhotoURLs(cs schemas.Chats) schemas.Chats {
+func withChatPhotoURLs(cs schemas.ChatSummaries) schemas.ChatSummaries {
 	for i := range cs {
-		cs[i] = withChatPhotoURL(cs[i])
+		cs[i].ChatBase = withChatPhotoURL(cs[i].ChatBase)
 	}
 	return cs
 }

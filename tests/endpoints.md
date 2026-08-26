@@ -2,7 +2,14 @@
 Manual tests for the endpoints registered in `service/api/api-handler.go`:
 `doLogin`, `setMyUserName`, `setMyPhoto`, `getUsers`, `getMyConversations`, `getPhoto`, `createPrivateChat`, `createGroup`, `setGroupName`, `setGroupPhoto`, `addToGroup`, `leaveGroup`.
 
-Last full run: 2026-08-25, every section below re-checked against a freshly built binary and an empty database: 231 assertions, all green. The server log carried only the failures the tests asked for, and the invariants held afterwards — no chat without members, no private chat holding a name or a photo of its own, no group missing one, no membership pointing at a row that is gone, and every referenced photo id present on disk with nothing left over.
+Last full run: 2026-08-25, every section below re-checked against a freshly built binary: **263 assertions, all green** — 206 from §0–13 and 57 from the §14 scenarios. The server log carried only the failures the tests asked for, and the invariants held afterwards — no chat without members, no private chat holding a name or a photo of its own, no group missing one, no membership pointing at a row that is gone, and every referenced photo id present on disk with nothing left over.
+
+Two scripts run all of it, so a section does not have to be pasted by hand:
+```shell
+bash tests/run-tests.sh       # §0-13, 206 assertions
+bash tests/run-scenarios.sh   # §14 S1-S14, 57 assertions
+```
+They need the server already listening (see Run below) and are safe to re-run: every fixture carries the run suffix `$R`. One assertion is global rather than `$R`-scoped — `no stranded chat` in §11 — so if it alone fails, check whether the offending row predates the run before suspecting the code.
 
 Bind the port before trusting a run. A server that finds `:3000` taken exits with `bind: address already in use` while the previous one keeps answering, so requests reach one database and the `sqlite3` commands below reach another. Check the log for `API listening` before the first request.
 
@@ -275,7 +282,7 @@ curl -i -X PATCH localhost:3000/groups/$G/name \
 | `GET` / `POST` on the same path | `405 Method Not Allowed` (§13) |
 | bad/absent token | §0, and the name is not touched |
 
-The reply is a `GroupSummary`: renaming never reads the messages of the group, so the `snippet` derived from them.
+The reply is a `GroupChat`: the chat alone, since renaming a group reads neither its members nor its messages, so no preview is derived from them.
 
 The `chatType` is not read back from the row. It is a condition of the write, so a returned row is always a group.
 
@@ -315,7 +322,7 @@ curl -i -X PATCH localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F
 | `GET` / `POST` on the same path | `405 Method Not Allowed` (§13) |
 | bad/absent token | §0, and nothing is written to `./db/photos` |
 
-The reply is a `GroupSummary`, like §8: replacing a photo never reads the messages, so no `snippet` is derived.
+The reply is a `GroupChat`, like §8: replacing a photo reads neither the members nor the messages, so no preview is derived from them.
 
 No leaked files, including the refusals that come after the upload. Who may change the photo is a condition of the `UPDATE` itself, so a `403` and a `404` are only known once the bytes are already on disk; the handler deletes them on every failing branch, not just on `500`:
 ```shell
@@ -365,7 +372,7 @@ curl -i -X POST localhost:3000/groups/$G/members \
 | `GET` / `PATCH` / `DELETE` on the same path | `405 Method Not Allowed` + `Allow: OPTIONS, POST` (§13) |
 | bad/absent token | §0, and no membership is written |
 
-The reply is a `GroupWithMembers`: the summary plus the whole member list, and no messages, so no `snippet` is derived. The list is read after the `INSERT`, so its length is what the table holds and never what the request asked — adding 2 people to a group of 50 answers with 52.
+The reply is a `GroupWithMembers`: the chat plus the whole member list, and no messages, so no preview is derived. The list is read after the `INSERT`, so its length is what the table holds and never what the request asked — adding 2 people to a group of 50 answers with 52.
 
 An empty list still answers for the group. The existence and the membership are checked before the write is skipped, so adding nobody is never a free `200`:
 ```shell
@@ -400,10 +407,10 @@ curl -i -X DELETE localhost:3000/groups/$G/members/me -H "Authorization: Bearer 
 
 | case | reply |
 |---|---|
-| a member of three leaves | `200 {"id":"$G","chatType":"group","name":"...","photo":"/photos/<uuid>","members":[<the other two>]}` |
+| a member of three leaves | `204` and an empty body |
 | the same caller leaves again | `403 {"code":403,"message":"not a member of the group"}` — it is no longer one of them |
 | a caller who was never a member | `403 not a member of the group` |
-| the last member leaves | `200` with `"members":[]`, and the group is gone (see below) |
+| the last member leaves | `204`, and the group is gone (see below) |
 | any call on a group already emptied | `404 {"code":404,"message":"group not found"}` — the row went with the last member |
 | a valid UUID owned by nobody | `404 group not found` |
 | the id of a private chat | `404 group not found` — its two members are its pair, and neither leaves it |
@@ -412,7 +419,9 @@ curl -i -X DELETE localhost:3000/groups/$G/members/me -H "Authorization: Bearer 
 | `DELETE /groups/{groupId}/members` (without `/me`) | `405` — that path is `POST` only, and `POST` on it still answers `200`: the two routes do not collide |
 | bad/absent token | §0, and no membership is removed |
 
-The reply is a `GroupWithMembers`, like §10, and 403 vs 404 come from one read for the same reason. The list is read after the `DELETE`, so it is what the caller leaves behind and never includes the caller, and it is built with `make`, so an emptied group answers `"members":[]` and never `nil`.
+The reply has no body, unlike every other endpoint of this API. What this call removes is one membership, whose whole content is the group of the path and the caller of the token: there is no value the caller does not already hold, so a `204` says everything a `200` could. Failures still carry the `Error` schema — it is success that is empty. 403 vs 404 still come from one read, for the same reason as §10.
+
+The group is never observably empty, which is why no reply has to say it is. Removing the last membership and dropping the group row are one transaction, so a concurrent reader sees the group with at least one member or does not see it at all. `LeaveGroup` only asks `SELECT 1 ... LIMIT 1` after the `DELETE` — whether anybody is left, never who, and never how many — and that answer decides whether the row goes. The method gives back the group photo id and nothing else: the handler needs it for `releasePhoto` and sends none of it to the client.
 
 The last member out drops the group: nobody can reach it again, so it goes with the caller, and its messages follow through the `ON DELETE CASCADE` of the `messages` table. No membership is left to cascade, the one this call removed being the last.
 ```shell
@@ -420,15 +429,16 @@ G2=$(curl -s -X POST localhost:3000/groups -H "Authorization: Bearer $A" \
   -F "data={\"name\":\"Drop $R\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
 GP=$(sqlite3 db/wasatext.db "SELECT photoId FROM chats WHERE id='$G2';")
 
-curl -s -X DELETE localhost:3000/groups/$G2/members/me -H "Authorization: Bearer $A"   # -> "members":["$B"]
+curl -s -X DELETE localhost:3000/groups/$G2/members/me -H "Authorization: Bearer $A"   # -> 204, empty body
+sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chat_members WHERE chatId='$G2';"         # -> 1, B is still inside
 ls db/photos/$GP                                                                       # -> still there
-curl -s -X DELETE localhost:3000/groups/$G2/members/me -H "Authorization: Bearer $B"   # -> "members":[]
+curl -s -X DELETE localhost:3000/groups/$G2/members/me -H "Authorization: Bearer $B"   # -> 204, the last one out
 sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chats WHERE id='$G2';"                    # -> 0
 sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chat_members WHERE chatId='$G2';"         # -> 0
 ls db/photos/$GP                                                                       # -> No such file
 ```
 
-Garbage collection, as in §4 and §9. The handler writes no condition: `releasePhoto` asks `PhotoIsReferenced`, so a leave that keeps the group keeps the photo, a photo another row shows survives the group, and the default one is never collected.
+Garbage collection, as in §4 and §9. `LeaveGroup` gives back a photo id only when the caller was the last one out: while the group stands its own row still points at that photo, so nothing could release it and `releasePhoto` is never reached. On the last leave it is reached and asks `PhotoIsReferenced`, so a photo another row still shows survives the group, and the default one is never collected.
 
 Nothing is written when a call is refused: after a `403`, `SELECT COUNT(*) FROM chat_members WHERE chatId='$G'` and `ls db/photos | wc -l` are both what they were.
 
@@ -558,9 +568,9 @@ S9 — the two kinds of chat stay apart under `/groups/`. A+B `createPrivateChat
 
 S10 — a member added is a member for every other call. A `createGroup` with B → G; A `addToGroup` C → `200`; then C `setGroupName` on G → `200`, C `setGroupPhoto` → `200`, C `addToGroup` D → `200`. One row in `chat_members` is what all of them read, so joining grants the whole group surface and not only the list C appeared in.
 
-S11 — leaving takes the whole group surface away, the inverse of S10. A `createGroup` with B and C → G; C `leaveGroup` → `200`; then C `setGroupName` → `403`, C `setGroupPhoto` → `403`, C `addToGroup` → `403`, C `leaveGroup` again → `403`. The same row that granted everything is the one just removed.
+S11 — leaving takes the whole group surface away, the inverse of S10. A `createGroup` with B and C → G; C `leaveGroup` → `204`; then C `setGroupName` → `403`, C `setGroupPhoto` → `403`, C `addToGroup` → `403`, C `leaveGroup` again → `403`. The same row that granted everything is the one just removed.
 
-S12 — a group outlives every member but the last. A `createGroup` with B → G with photo P; A `leaveGroup` → `200` and `members` is `[B]`, `getPhoto P` → `200`; B `leaveGroup` → `200` and `members` is `[]`, `getPhoto P` → `404`, and G is a `404` for both of them. The group is dropped exactly once, by the member that empties it, and its photo goes with it.
+S12 — a group outlives every member but the last. A `createGroup` with B → G with photo P; A `leaveGroup` → `204` and `chat_members` still holds B, `getPhoto P` → `200`; B `leaveGroup` → `204` and the `chats` row is gone, `getPhoto P` → `404`, and G is a `404` for both of them. The group is dropped exactly once, by the member that empties it, and its photo goes with it. The replies say none of this: a departed member is told only that it left, and the rest is read from the tables.
 
 S13 — the list is the membership, seen from the other side. A fresh user `getMyConversations` → `404`; A `createPrivateChat` with it → the chat appears for both, named after the other one each time; A `createGroup` with it → the group appears too; it `leaveGroup` → the group is gone from its list and still in A's; it is the only member left of nothing, so once the private chat is its last chat the list holds exactly one row. Every row of §12 is one row of `chat_members`, which is why §10 and §11 change the list without touching it.
 

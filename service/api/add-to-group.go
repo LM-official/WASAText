@@ -74,7 +74,7 @@ func (rt *_router) addToGroup(w http.ResponseWriter, r *http.Request, ps httprou
 	}
 
 	// Response
-	// The summary is embedded, so the photo id it carries is turned into a URL through it
-	chat.ChatSummary = withChatPhotoURL(chat.ChatSummary)
+	// The base is embedded, so the photo id it carries is turned into a URL through it
+	chat.ChatBase = withChatPhotoURL(chat.ChatBase)
 	writeJSON(w, ctx, http.StatusOK, chat)
 }

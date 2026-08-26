@@ -184,10 +184,10 @@ func (n ChatName) IsValid() error {
 	return nil
 }
 
-// Returns error if the ChatSummary does not meets the rules, otherwise nil
-func (c *ChatSummary) IsValid() error {
+// Returns error if the ChatBase does not meets the rules, otherwise nil
+func (c *ChatBase) IsValid() error {
 	if c == nil {
-		return errors.New("chat summary is nil")
+		return errors.New("chat base is nil")
 	}
 
 	if err := c.Id.IsValid(); err != nil {
@@ -214,6 +214,19 @@ func (c *ChatSummary) IsValid() error {
 		if err := c.Name.IsValid(); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// Returns error if the ChatSummary does not meets the rules, otherwise nil
+func (c *ChatSummary) IsValid() error {
+	if c == nil {
+		return errors.New("chat summary is nil")
+	}
+
+	if err := c.ChatBase.IsValid(); err != nil {
+		return err
 	}
 
 	// The snippet is optional: a chat without messages has no preview
@@ -253,18 +266,22 @@ func (c *ChatWithMembers) IsValid() error {
 		return errors.New("chat with members is nil")
 	}
 
-	if err := c.ChatSummary.IsValid(); err != nil {
+	if err := c.ChatBase.IsValid(); err != nil {
 		return err
 	}
 
 	// The number of members depends on the type of the chat
+	// A chat is answered with its members only to a member of it, so it always holds at least the caller:
+	// a group that empties is dropped in the same transaction that empties it
 	switch c.Type {
 	case ChatTypePrivate:
+		// A private chat is always the two of its pair, and is left by neither
 		if n := len(c.Members); n != 2 {
 			return fmt.Errorf("invalid private chat members: %d; must be exactly 2", n)
 		}
 
 	case ChatTypeGroup:
+		// A group chat has always at least a member
 		if n := len(c.Members); n < 1 {
 			return fmt.Errorf("invalid group members: %d; must be at least 1", n)
 		}

@@ -118,17 +118,84 @@ components:                                           # Reusable components
       additionalProperties: false                     # No other properties allowed
 
     
-    ChatSummary:                                      # Generic chat summary schema
+    # Two axes meet here: the shape of the answer, and the kind of the chat
+    # The shape axis is the one service/schemas/schemas.go declares as types
+    # The kind axis is the one its IsValid() methods switch on, and holds the only things the two kinds do not share
+    # A wire shape below is one of the products of the two, and only the products an endpoint answers with exist
+
+    ChatBase:                                         # Shape: what a chat carries whichever way it is asked for
       description: |
-        Standard chat summary, one element of the chats list of the homepage:
-        no members and no messages, the list only draws name, photo and snippet
+        What a chat carries whichever way it is asked for, and the root every chat shape grows from:
+        no members, no messages and no preview, each of them added by the shape that answers with it
+        chatType and name are left open to both kinds here, and narrowed by the kind axis below
       type: object
       properties:
         id:
           $ref: '#/components/schemas/ChatId'
-        snippet:                                      # Absent while the chat has no message, and while its last
-          $ref: '#/components/schemas/Snippet'        # One carries nothing to preview: a snippet always has content
-      required: [id]
+        chatType:                                     # The discriminator of the two kinds,
+          description: 'Chat type'                    # narrowed to a single value by the kind axis
+          type: string
+          pattern: '^.{5,7}$'                         # 5-7 chars as 'group' or 'private'
+          minLength: 5
+          maxLength: 7
+          enum: ['private', 'group']
+          readOnly: true
+          example: 'group'
+        name:                                         # A GroupName for a group, a Username for a private chat,
+          description: |                              # so what stands here is the wider of the two
+            The name of the chat: the one a group owns,
+            or the username of the other member of a private chat
+          type: string
+          minLength: 1
+          maxLength: 100
+        photo:                                        # The same for both kinds, so the kind axis narrows it in neither:
+          $ref: '#/components/schemas/PhotoURL'       # a group owns its photo, a private chat borrows the other member's
+      required: [id, chatType, name, photo]
+
+    ChatSummary:                                      # Shape: the base + the preview of the last message
+      description: |
+        A chat and the preview of its last message, which is what the chats list of the homepage draws
+      allOf:                                          # Combines ChatBase with the modifications below
+        - $ref: '#/components/schemas/ChatBase'       # Inherit everything from ChatBase
+        - type: object                                # Override type to object
+          properties:
+            snippet:                                  # Never required: absent while the chat has no message, and while
+              $ref: '#/components/schemas/Snippet'    # its last one carries nothing a preview could show
+      # id, chatType, name and photo are already required in ChatBase
+
+    ChatWithMembers:                                  # Shape: the base + who belongs to the chat
+      description: |
+        A chat and its members, without the messages
+        A chat is answered with its members only to a member of it, so the list always holds at least the caller
+      allOf:                                          # Combines ChatBase with the modifications below
+        - $ref: '#/components/schemas/ChatBase'       # Inherit everything from ChatBase
+        - type: object                                # Override type to object
+          properties:
+            members:
+              description: 'Members of the chat'
+              type: array
+              items:
+                $ref: '#/components/schemas/UserId'
+              minItems: 1                             # The wider of the two kinds, narrowed by the kind axis below
+              maxItems: 100
+              uniqueItems: true                       # One row per membership: a member cannot be held twice
+          required: [members]                         # + id, chatType, name, photo already required in ChatBase
+
+    ChatDetail:                                       # Shape: the members + the whole messages list
+      description: 'An opened chat: its members and the full messages list'
+      allOf:                                          # Combines ChatWithMembers with the modifications below
+        - $ref: '#/components/schemas/ChatWithMembers' # Inherit everything from ChatWithMembers
+        - type: object                                # Override type to object
+          properties:
+            messages:
+              description: 'List of all the messages of the chat'
+              type: array
+              items:
+                $ref: '#/components/schemas/Message'
+              minItems: 0                             # A chat nobody has written in yet
+              maxItems: 100000
+          required: [messages]                        # + id, chatType, name, photo, members already required above
+
 
     GroupName:
       description: 'Standard group name'
@@ -138,101 +205,94 @@ components:                                           # Reusable components
       maxLength: 100
       example: 'Study Group'
 
-    GroupSummary:
-      description: 'Standard group chat summary, without members and full messages list'
-      allOf:                                          # Combines ChatSummary with the modifications below
-        - $ref: '#/components/schemas/ChatSummary'    # Inherit everything from ChatSummary
-        - type: object                                # Override type to object
-          properties:
-            chatType:
-              description: 'Chat type'
-              type: string
-              pattern: '^.{5}$'                       # 5 chars
-              minLength: 5
-              maxLength: 5
-              enum: ['group']
-              readOnly: true
-              example: 'group'
-            name:
-              $ref: '#/components/schemas/GroupName'
-            photo:
-              $ref: '#/components/schemas/PhotoURL'
-      required: [chatType, name, photo]               # + id already required in ChatSummary
+    GroupKind:                                        # Kind: what a group does not share with a pair
+      description: |
+        The narrowing that makes a chat a group, and nothing else
+        It names no property the shape axis does not already carry, so it composes with every shape above:
+        members is narrowed and never required here, so a shape that carries none is left untouched by it
+      type: object
+      properties:
+        chatType:
+          description: 'Chat type'
+          type: string
+          pattern: '^.{5}$'                           # 5 chars as 'group'
+          minLength: 5
+          maxLength: 5
+          enum: ['group']
+          readOnly: true
+          example: 'group'
+        name:                                         # The name the group owns
+          $ref: '#/components/schemas/GroupName'
+        members:                                      # Only the count narrows here, the items are the ones
+          description: 'Members of the group'         # The shape this is combined with already carries
+          type: array
+          items:
+            $ref: '#/components/schemas/UserId'
+          minItems: 1                                 # A group answered with its members holds at least the caller
+          maxItems: 100
 
-    GroupWithMembers:
-      description: 'Standard group chat with its members, without the full messages list'
-      allOf:                                          # Combines GroupSummary with the modifications below
-        - $ref: '#/components/schemas/GroupSummary'   # Inherit everything from GroupSummary
-        - type: object                                # Override type to object
-          properties:
-            members:
-              description: 'Members of the group'
-              type: array
-              items:
-                $ref: '#/components/schemas/UserId'
-              minItems: 0                             # When the last member leaves the group, the group is temporarelly empty then deleted
-              maxItems: 100
-              uniqueItems: true
-          required: [members]                         # + id, chatType, name, photo already required in GroupSummary
+    PrivateChatKind:                                  # Kind: what a pair does not share with a group
+      description: |
+        The narrowing that makes a chat a private one, and nothing else
+        It names no property the shape axis does not already carry, so it composes with every shape above:
+        members is narrowed and never required here, so a shape that carries none is left untouched by it
+      type: object
+      properties:
+        chatType:
+          description: 'Chat type'
+          type: string
+          pattern: '^.{7}$'                           # 7 chars as 'private'
+          minLength: 7
+          maxLength: 7
+          enum: ['private']
+          readOnly: true
+          example: 'private'
+        name:                                         # The username of the other member
+          $ref: '#/components/schemas/Username'
+        members:                                      # Only the count narrows here, the items are the ones
+          description: 'The two members of the private chat'  # The shape this is combined with already carries
+          type: array
+          items:
+            $ref: '#/components/schemas/UserId'
+          minItems: 2                                 # A private chat is always the two of its pair
+          maxItems: 2
 
-    GroupDetail:
-      description: 'Standard group chat, with the members and the full messages list'
-      allOf:                                          # Combines GroupWithMembers with the modifications below
-        - $ref: '#/components/schemas/GroupWithMembers' # Inherit everything from GroupWithMembers
-        - type: object                                # Override type to object
-          properties:
-            messages:
-              description: 'List of all messages in the group chat'
-              type: array
-              items:
-                $ref: '#/components/schemas/Message'
-              minItems: 0
-              maxItems: 100000
-          required: [messages]                        # + id, chatType, name, photo, members already required in GroupWithMembers
+    GroupChat:                                        # Wire shape: setGroupName, setGroupPhoto
+      description: 'A group chat, without its members, its messages and any preview'
+      allOf:
+        - $ref: '#/components/schemas/ChatBase'
+        - $ref: '#/components/schemas/GroupKind'
 
-    PrivateChatSummary:
-      description: 'Standard private chat summary, without members and full messages list'
-      allOf:                                          # Combines ChatSummary with the modifications below
-        - $ref: '#/components/schemas/ChatSummary'    # Inherit everything from ChatSummary
-        - type: object                                # Override type to object
-          properties:
-            chatType:
-              description: 'Chat type'
-              type: string
-              pattern: '^.{7}$'                       # 7 chars
-              minLength: 7
-              maxLength: 7
-              enum: ['private']
-              readOnly: true
-              example: 'private'
-            name:                                     # The other user username
-              $ref: '#/components/schemas/Username'
-            photo:                                    # The other user photo
-              $ref: '#/components/schemas/PhotoURL'
-      required: [chatType, name, photo]               # + id already required in ChatSummary
+    GroupSummary:                                     # Wire shape: getMyConversations
+      description: 'A group chat as the chats list of the homepage draws it, with the snippet'
+      allOf:
+        - $ref: '#/components/schemas/ChatSummary'
+        - $ref: '#/components/schemas/GroupKind'
 
-    PrivateChatDetail:
-      description: 'Standard private chat, with the members and the full messages list'
-      allOf:                                          # Combines PrivateChatSummary with the modifications below
-        - $ref: '#/components/schemas/PrivateChatSummary' # Inherit everything from PrivateChatSummary
-        - type: object                                # Override type to object
-          properties:
-            members:
-              description: 'The two members of the private chat'
-              type: array
-              items:
-                $ref: '#/components/schemas/UserId'
-              minItems: 2
-              maxItems: 2
-              uniqueItems: true                       # Ensure that each member could be once in the members list
-            messages:
-              description: 'List of all messages in the private chat'
-              type: array
-              items:
-                $ref: '#/components/schemas/Message'
-              minItems: 0
-              maxItems: 100000
-          required: [members, messages]               # + id, chatType, name, photo already required in PrivateChatSummary
+    GroupWithMembers:                                 # Wire shape: addToGroup
+      description: 'A group chat with its members, without the messages'
+      allOf:
+        - $ref: '#/components/schemas/ChatWithMembers'
+        - $ref: '#/components/schemas/GroupKind'
+
+    GroupDetail:                                      # Wire shape: getConversation
+      description: 'An opened group chat: its members and the full messages list'
+      allOf:
+        - $ref: '#/components/schemas/ChatDetail'
+        - $ref: '#/components/schemas/GroupKind'
+
+    PrivateChatSummary:                               # Wire shape: getMyConversations
+      description: 'A private chat as the chats list of the homepage draws it, with the snippet'
+      allOf:
+        - $ref: '#/components/schemas/ChatSummary'
+        - $ref: '#/components/schemas/PrivateChatKind'
+
+    PrivateChatDetail:                                # Wire shape: getConversation
+      description: 'An opened private chat: its two members and the full messages list'
+      allOf:
+        - $ref: '#/components/schemas/ChatDetail'
+        - $ref: '#/components/schemas/PrivateChatKind'
+
 
 
     MessageBase:
@@ -385,32 +445,11 @@ components:                                           # Reusable components
     # EXTRA: add cursor based pagination
 
   responses:
-    # success
-    #NoContent:
-    #  description: '204 No Content'
-
-    # redirection
-    #MovedPermanently:
-    #  description: '301 Moved Permanently'
-    #  headers:
-    #    Location:
-    #      description: 'Final URI of the requested resource'
-    #      schema:
-    #        type: string
-    #        format: uri
-    #      example: 'https://api.wasatext.com/messages/123'
-
-    #Found:
-    #  description: '302 Found'
-    #  headers:
-    #    Location:
-    #      description: 'Temporary URI to access the requested resource'
-    #      schema:
-    #        type: string
-    #        format: uri
-    #      example: 'https://api.wasatext.com/messages/temp/abc'
+    # Success
+    NoContent:
+      description: '204 No Content'
     
-    # client errors
+    # Client errors
     BadRequest:
       description: '400 Bad Request'
       content:
@@ -461,7 +500,7 @@ components:                                           # Reusable components
     #        code: 405
     #        message: 'The HTTP method used is not supported for this resource'
 
-    # server errors
+    # Server errors
     InternalServerError:
       description: '500 Internal Server Error'
       content:
@@ -471,46 +510,6 @@ components:                                           # Reusable components
           example:
             code: 500
             message: 'An internal server error occurred'
-
-    #NotImplemented:
-    #  description: '501 Not Implemented'
-    #  content:
-    #    application/json:
-    #      schema:
-    #        $ref: '#/components/schemas/Error'
-    #      example:
-    #        code: 501
-    #        message: 'The requested functionality is not yet supported'
-
-    BadGateway:
-      description: '502 Bad Gateway'
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            code: 502
-            message: 'The server received an invalid response from an upstream service'
-
-    ServiceUnavailable:
-      description: '503 Service Unavailable'
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            code: 503
-            message: 'The service is temporarily unavailable. Please try again later'
-
-    GatewayTimeout:
-      description: '504 Gateway Timeout'
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            code: 504
-            message: 'The server did not receive a response from the upstream service within the time limit'
 
 
 tags:
@@ -858,14 +857,7 @@ paths:                                                # Rest endpoints
                 # Alice's POV
                 name: 'Bob'
                 photo: 'https://api.wasatext.com/photos/bob.png'
-                snippet:
-                  id: '127ac10b-58cc-4372-a567-0e02b2c3d479'
-                  content:
-                    text: 'I will be there in 5 minutes.'
-                    emoji: '📷'
-                  date: '2025-11-15T18:35:00Z'
-                  user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
-                  state: 'received'
+                # No snippet: the whole messages list is right below, the last of them included
                 messages:
                   - id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
                     content:
@@ -892,12 +884,6 @@ paths:                                                # Rest endpoints
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
 
   /chats/{chatId}/messages:
     post:
@@ -946,12 +932,6 @@ paths:                                                # Rest endpoints
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
 
   /chats/{chatId}/messages/forwards:
     post:
@@ -998,12 +978,6 @@ paths:                                                # Rest endpoints
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
 
   /chats/{chatId}/messages/{messageId}/comments:
     get:
@@ -1048,12 +1022,6 @@ paths:                                                # Rest endpoints
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
 
   /chats/{chatId}/messages/{messageId}/comments/comment: # current user unique comment
     parameters:
@@ -1111,12 +1079,6 @@ paths:                                                # Rest endpoints
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
 
     delete:
       operationId: 'uncommentMessage'
@@ -1144,12 +1106,6 @@ paths:                                                # Rest endpoints
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
   
   /chats/{chatId}/messages/{messageId}:
     delete:
@@ -1185,12 +1141,6 @@ paths:                                                # Rest endpoints
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
-        '502':
-          $ref: '#/components/responses/BadGateway'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '504':
-          $ref: '#/components/responses/GatewayTimeout'
 
   # Private chat endpoints
   /private-chats:
@@ -1350,8 +1300,8 @@ paths:                                                # Rest endpoints
           description: 'Group name updated successfully'
           content:
             application/json:
-              schema:                                 # No messages list: renaming a group never reads them,
-                $ref: '#/components/schemas/GroupSummary' # and the snippet they derive is absent with them
+              schema:                                 # The chat alone: renaming a group reads neither its members
+                $ref: '#/components/schemas/GroupChat'  # nor its messages, and derives no preview from them
               example:
                 id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
                 chatType: 'group'
@@ -1397,8 +1347,8 @@ paths:                                                # Rest endpoints
           description: 'Group photo updated successfully'
           content:
             application/json:
-              schema:                                 # No messages list: replacing a photo never reads them,
-                $ref: '#/components/schemas/GroupSummary' # and the snippet they derive is absent with them
+              schema:                                 # The chat alone: replacing a photo reads neither the members
+                $ref: '#/components/schemas/GroupChat'  # nor the messages, and derives no preview from them
               example:
                 id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
                 chatType: 'group'
@@ -1451,7 +1401,7 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:                                 # No messages list: adding members never reads them,
-                $ref: '#/components/schemas/GroupWithMembers' # and the snippet they derive is absent with them
+                $ref: '#/components/schemas/GroupWithMembers' # and no preview is derived from them
               example:
                 id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
                 chatType: 'group'
@@ -1475,8 +1425,10 @@ paths:                                                # Rest endpoints
       description: |
         Removes the authenticated user from a group it is a member of.
         A member removes itself, and removing anybody else is not allowed.
-        A group nobody belongs to can never be reached again, so the last member out drops it,
-        and its messages go with it: an empty members list is what tells that caller the group is gone.
+        A group nobody belongs to can never be reached again, so the last member out drops it, and its messages go with it.
+        No group is ever left standing with nobody inside.
+        The call answers with no body: what it removes is one membership, whose whole content is
+        the group of the path and the caller of the token, so there is nothing to send back.
         A private chat borrows its two members from its pair and is left by neither,
         so its id names nothing under this collection and is a 404 here.
       summary: 'Leave a group chat'
@@ -1484,18 +1436,8 @@ paths:                                                # Rest endpoints
       parameters:
         - $ref: '#/components/parameters/ParamGroupId'
       responses:
-        '200':
-          description: 'User left the group successfully'
-          content:
-            application/json:
-              schema:                                 # No messages list: leaving a group never reads them,
-                $ref: '#/components/schemas/GroupWithMembers' # and the snippet they derive is absent with them
-              example:                                # The caller is never in this list: it has just left
-                id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
-                chatType: 'group'
-                name: 'Computer Science Study Group'
-                photo: '/photos/d41f8a72-3b6c-4e19-8a52-0c7f5b21e934'
-                members: ['90b2c3d4-e5f6-42ec-a945-5fd21dec0538', '80b2c3d4-e5f6-42ec-a945-5fd21dec0538']
+        '204':
+          $ref: '#/components/responses/NoContent'
         '400':                                        # The id in the URL is not a canonical UUID
           $ref: '#/components/responses/BadRequest'
         '401':

@@ -30,7 +30,7 @@ func (rt *_router) leaveGroup(w http.ResponseWriter, r *http.Request, ps httprou
 	}
 
 	// Query
-	chat, err := rt.db.LeaveGroup(userId, groupId)
+	oldPhotoId, err := rt.db.LeaveGroup(userId, groupId)
 	if err != nil {
 		// No group owns that id: it may not exist at all, or be a private chat,
 		// which borrows its two members from its pair and is left by neither
@@ -50,12 +50,13 @@ func (rt *_router) leaveGroup(w http.ResponseWriter, r *http.Request, ps httprou
 	}
 
 	// The caller may have been the last member, and a group nobody belongs to is dropped by the query above:
-	// its photo is garbage then, and no condition is needed here, releasePhoto keeps a photo
-	// any row still shows, which is every call that left the group standing
-	rt.releasePhoto(chat.Photo.Id(), ctx)
+	// its photo is garbage then
+	// LeaveGroup gives back that photo only when the group went with the caller,
+	// and an empty id otherwise, which releasePhoto takes as nothing to do
+	rt.releasePhoto(oldPhotoId, ctx)
 
 	// Response
-	// The summary is embedded, so the photo id it carries is turned into a URL through it
-	chat.ChatSummary = withChatPhotoURL(chat.ChatSummary)
-	writeJSON(w, ctx, http.StatusOK, chat)
+	// A DELETE answers with no body: this call remove the caller membership to the group
+	// Who is left inside is read by the members of that group, and the caller has just stopped being one
+	w.WriteHeader(http.StatusNoContent)
 }

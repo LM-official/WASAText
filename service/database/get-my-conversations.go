@@ -15,7 +15,7 @@ import (
 // and never stored, or it would go stale on every setMyUserName and setMyPhoto
 //
 // Each chat carries the snippet of its last message, and none while it holds no message
-func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.Chats, error) {
+func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.ChatSummaries, error) {
 	// 1. id and type, every chat stores them in a row
 	// 2. name and photo, a group owns them, a private chat borrows them from the other member
 	// 3. The last message, or none while the chat holds no message
@@ -54,12 +54,12 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.Chats, e
 	)
 	// Query error
 	if err != nil {
-		return schemas.Chats{}, fmt.Errorf("cannot get the chats of user %q: %w", userId, err)
+		return schemas.ChatSummaries{}, fmt.Errorf("cannot get the chats of user %q: %w", userId, err)
 	}
 	// Close rows when done even in case of error
 	defer func() { _ = rows.Close() }()
 
-	results := make(schemas.Chats, 0)
+	results := make(schemas.ChatSummaries, 0)
 	for rows.Next() {
 		var chat schemas.ChatSummary
 		// The columns of the last message are NULL together while the chat holds no message
@@ -69,7 +69,7 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.Chats, e
 		// Error reading a row: a shorter list would be a wrong answer, not a partial one
 		if err := rows.Scan(&chat.Id, &chat.Type, &chat.Name, &chat.Photo,
 			&msgId, &msgUser, &msgDate, &msgText, &msgPhoto, &isRead); err != nil {
-			return schemas.Chats{}, fmt.Errorf("cannot read a chat of user %q: %w", userId, err)
+			return schemas.ChatSummaries{}, fmt.Errorf("cannot read a chat of user %q: %w", userId, err)
 		}
 
 		// Invalid last message, snippet is nil by default
@@ -83,7 +83,7 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.Chats, e
 		date, err := time.Parse(dateFormat, msgDate.String)
 		// A date the schema cannot have written: the row is broken, not the request
 		if err != nil {
-			return schemas.Chats{}, fmt.Errorf("cannot read the date of the last message: %w", err)
+			return schemas.ChatSummaries{}, fmt.Errorf("cannot read the date of the last message: %w", err)
 		}
 
 		// A message carries text, photo, or both, and so does its snippet:
@@ -122,7 +122,7 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.Chats, e
 	}
 	// Error during rows iteration
 	if err := rows.Err(); err != nil {
-		return schemas.Chats{}, fmt.Errorf("cannot read the chats of user %q: %w", userId, err)
+		return schemas.ChatSummaries{}, fmt.Errorf("cannot read the chats of user %q: %w", userId, err)
 	}
 
 	return results, nil

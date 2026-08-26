@@ -31,6 +31,6 @@ func (rt *_router) getMyConversations(w http.ResponseWriter, r *http.Request, ps
 
 	// Response
 	writeJSON(w, ctx, http.StatusOK, struct {
-		Chats schemas.Chats `json:"chats"`
+		Chats schemas.ChatSummaries `json:"chats"`
 	}{Chats: withChatPhotoURLs(chats)})
 }

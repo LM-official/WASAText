@@ -69,7 +69,7 @@ type User struct {
 type Users []User
 
 // ---------- CHAT ----------
-// tables: chats (id, chatType, name, photo) + chat_members (chatId, userId)
+// tables: chats (id, chatType, name, photoId, pairKey) + chat_members (chatId, userId, lastReadDate)
 // A private chat and a group are the same thing with a different chatType,
 // exactly like the chats table: a group owns its name and photo, a private chat borrows them from the other member
 type ChatType string
@@ -87,26 +87,30 @@ const GroupMaxMembers = 100
 
 type Members []UserId
 
-// ChatSummary is one element of the chats list: the preview of a chat
-// The members are not here: the homepage list only draws name, photo and snippet
-// and a private chat already borrows name and photo from the other member
+// ChatBase is what a chat carries whichever way it is asked for, and the root every shape below grows from
+type ChatBase struct {
+	Id    ChatId   `json:"id"`
+	Type  ChatType `json:"chatType"`
+	Name  ChatName `json:"name"`
+	Photo PhotoURL `json:"photo"`
+}
+
+// ChatSummary is one element of the chats list of the homepage: the base + the preview of its last message
+// The snippet is only here and not in any other Chat* because the list is the only place that draws a preview
 type ChatSummary struct {
-	Id      ChatId   `json:"id"`
-	Type    ChatType `json:"chatType"`
-	Name    ChatName `json:"name"`
-	Photo   PhotoURL `json:"photo"`
+	ChatBase
 	Snippet *Snippet `json:"snippet,omitempty"` // Absent while the chat has no messages
 }
 
-type Chats []ChatSummary
+type ChatSummaries []ChatSummary
 
-// ChatWithMembers is the summary + who belongs to the chat, and nothing else
+// ChatWithMembers is the base + who belongs to the chat
 type ChatWithMembers struct {
-	ChatSummary
+	ChatBase
 	Members Members `json:"members"`
 }
 
-// ChatDetail is an opened chat: the summary + the members and the full messages list
+// ChatDetail is an opened chat: the base + the members and the full messages list
 type ChatDetail struct {
 	ChatWithMembers
 	Messages Messages `json:"messages"`
