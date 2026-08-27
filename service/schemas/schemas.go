@@ -87,6 +87,11 @@ const GroupMaxMembers = 100
 
 type Members []UserId
 
+// UserChatsPageSize is how many chats one read of the chats of a user gives back:
+// the most recently active ones, which is where the homepage opens, while the older ones are what the client asks for by scrolling
+// There is no cap on how many chats a user belongs to, so this page is the only bound of that read
+const UserChatsPageSize = 500
+
 // ChatBase is what a chat carries whichever way it is asked for, and the root every shape below grows from
 type ChatBase struct {
 	Id    ChatId   `json:"id"`
@@ -125,6 +130,14 @@ const (
 	MessageStateReceived MessageState = "received"
 	MessageStateRead     MessageState = "read"
 )
+
+// ChatMaxMessages is how many messages a chat can hold at once
+const ChatMaxMessages = 10000
+
+// ChatMessagesPageSize is how many of them one read of a chat gives back:
+// the newest ones, which is where a chat is opened, while the older ones are
+// what the client asks for by scrolling up
+const ChatMessagesPageSize = 500
 
 // MessageBase is everything a message and its snippet have in common
 type MessageBase struct {

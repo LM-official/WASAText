@@ -1,13 +1,13 @@
 # WASAText — endpoint tests
 Manual tests for the endpoints registered in `service/api/api-handler.go`:
-`doLogin`, `setMyUserName`, `setMyPhoto`, `getUsers`, `getMyConversations`, `getPhoto`, `createPrivateChat`, `createGroup`, `setGroupName`, `setGroupPhoto`, `addToGroup`, `leaveGroup`.
+`doLogin`, `setMyUserName`, `setMyPhoto`, `getUsers`, `getMyConversations`, `getConversation`, `getPhoto`, `createPrivateChat`, `createGroup`, `setGroupName`, `setGroupPhoto`, `addToGroup`, `leaveGroup`.
 
-Last full run: 2026-08-25, every section below re-checked against a freshly built binary: **263 assertions, all green** — 206 from §0–13 and 57 from the §14 scenarios. The server log carried only the failures the tests asked for, and the invariants held afterwards — no chat without members, no private chat holding a name or a photo of its own, no group missing one, no membership pointing at a row that is gone, and every referenced photo id present on disk with nothing left over.
+Last full run: 2026-08-27, every section below re-checked against a freshly built binary: **310 assertions, all green** — 245 from §0–14 and 65 from the §15 scenarios. The server log carried only the failures the tests asked for, and the invariants held afterwards — no chat without members, no private chat holding a name or a photo of its own, no group missing one, no membership pointing at a row that is gone, and every referenced photo id present on disk with nothing left over.
 
 Two scripts run all of it, so a section does not have to be pasted by hand:
 ```shell
-bash tests/run-tests.sh       # §0-13, 206 assertions
-bash tests/run-scenarios.sh   # §14 S1-S14, 57 assertions
+bash tests/run-tests.sh       # §0-14, 245 assertions
+bash tests/run-scenarios.sh   # §15 S1-S15, 65 assertions
 ```
 They need the server already listening (see Run below) and are safe to re-run: every fixture carries the run suffix `$R`. One assertion is global rather than `$R`-scoped — `no stranded chat` in §11 — so if it alone fails, check whether the offending row predates the run before suspecting the code.
 
@@ -46,7 +46,7 @@ printf 'not an image' > /tmp/text.txt
 ---
 
 ## 0. Authentication — every endpoint but `doLogin`
-`service/api/api-authenticate.go` runs before the handler, so these answers are the same on `/me/username`, `/me/photo`, `/me/chats`, `/users`, `/photos/:photoId`, `/private-chats`, `/groups`, `/groups/:groupId/name`, `/groups/:groupId/photo`, `/groups/:groupId/members` and `/groups/:groupId/members/me`, and nothing is read or written when they fire.
+`service/api/api-authenticate.go` runs before the handler, so these answers are the same on `/me/username`, `/me/photo`, `/me/chats`, `/chats/:chatId`, `/users`, `/photos/:photoId`, `/private-chats`, `/groups`, `/groups/:groupId/name`, `/groups/:groupId/photo`, `/groups/:groupId/members` and `/groups/:groupId/members/me`, and nothing is read or written when they fire.
 
 | Authorization header | reply |
 |---|---|
@@ -82,7 +82,7 @@ curl -i -X POST localhost:3000/session -H 'Content-Type: application/json' -d "{
 | `{"username":"<30 chars>"}` | `201` |
 | `{"username":"<31 chars>"}` | `400` |
 | `{"username":` (truncated) or empty body | `400 invalid request body` |
-| `{"username":"carl$R","admin":true}` | `200`/`201` — unknown fields are ignored, see §15 |
+| `{"username":"carl$R","admin":true}` | `200`/`201` — unknown fields are ignored, see §16 |
 
 The returned id is the bearer token of every other test: this is the only point where `doLogin` and `authenticate` have to agree.
 
@@ -101,7 +101,7 @@ curl -i -X PATCH localhost:3000/me/username \
 | the username it already has | `200`, unchanged — updating a row to its own value is not a UNIQUE conflict |
 | `"bob$R"` (owned by B) | `400 {"code":400,"message":"username already taken"}`, nothing written |
 | `{"username":""}`, `{}`, `{"username":"a b"}`, 31 chars | `400 invalid request body` |
-| `Content-Type: application/json` | identical result — the handler never reads the header (§15) |
+| `Content-Type: application/json` | identical result — the handler never reads the header (§16) |
 | bad/absent token | §0, and the username is not touched |
 
 The `photo` field is a URL and never the stored id: `service/api/photo-url.go` is what turns one into the other. A user that never uploaded shows the default id.
@@ -120,7 +120,7 @@ curl -i "localhost:3000/users?username=alice" -H "Authorization: Bearer $A"
 | `?username=` or the parameter absent | `400 {"code":400,"message":"invalid username"}` |
 | `?username=a b` (invalid chars) | `400 invalid username` |
 | more than 20 matches | `200` with the first 20 (`LIMIT 20`) |
-| own username with own token | `200`, and the caller is in the list — see §16 |
+| own username with own token | `200`, and the caller is in the list — see §17 |
 
 LIKE escaping. `_` and `%` are LIKE wildcards and `_` is a legal username character, so `service/database/get-users.go` escapes the prefix:
 ```shell
@@ -193,7 +193,7 @@ curl -i localhost:3000/photos/00000000-0000-4000-8000-000000000000 -H "Authoriza
 | an existing id | `200`, `Content-Type: image/png`, `X-Content-Type-Options: nosniff`, `Cache-Control: private, max-age=31536000, immutable` |
 | `/photos/not-a-uuid` | `400 {"code":400,"message":"invalid photo id"}` |
 | `/photos/..` or `/photos/a.b` | `400 invalid photo id` — an id is a canonical UUID, so it can hold no `.` |
-| `/photos/../../etc/passwd`, raw or percent-encoded | `404`, plain text — the extra segments match no route, so the router answers before the handler (§13) |
+| `/photos/../../etc/passwd`, raw or percent-encoded | `404`, plain text — the extra segments match no route, so the router answers before the handler (§14) |
 | a valid UUID with no file | `404 {"code":404,"message":"photo not found"}` |
 | no token | `401` — which is why the frontend cannot use a plain `<img src>` and has to fetch the bytes |
 
@@ -277,9 +277,9 @@ curl -i -X PATCH localhost:3000/groups/$G/name \
 | `/groups/not-a-uuid/name`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
 | `{"name":""}`, `{"name":"   "}`, `{}`, `{"name":null}`, 101 chars | `400 invalid request body` |
 | malformed or empty body | `400 invalid request body` |
-| `Content-Type: application/json` | identical result — the handler never reads the header (§15) |
-| `{"name":"x","admin":true}` | `200` — unknown fields are ignored (§15) |
-| `GET` / `POST` on the same path | `405 Method Not Allowed` (§13) |
+| `Content-Type: application/json` | identical result — the handler never reads the header (§16) |
+| `{"name":"x","admin":true}` | `200` — unknown fields are ignored (§16) |
+| `GET` / `POST` on the same path | `405 Method Not Allowed` (§14) |
 | bad/absent token | §0, and the name is not touched |
 
 The reply is a `GroupChat`: the chat alone, since renaming a group reads neither its members nor its messages, so no preview is derived from them.
@@ -319,7 +319,7 @@ curl -i -X PATCH localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F
 | a valid UUID owned by nobody | `404 {"code":404,"message":"group not found"}` |
 | the id of a private chat | `404 group not found` — a private chat borrows its photo and owns none to update |
 | `/groups/not-a-uuid/photo`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
-| `GET` / `POST` on the same path | `405 Method Not Allowed` (§13) |
+| `GET` / `POST` on the same path | `405 Method Not Allowed` (§14) |
 | bad/absent token | §0, and nothing is written to `./db/photos` |
 
 The reply is a `GroupChat`, like §8: replacing a photo reads neither the members nor the messages, so no preview is derived from them.
@@ -369,7 +369,7 @@ curl -i -X POST localhost:3000/groups/$G/members \
 | `{"members":["nope"]}`, duplicate ids, 101 entries | `400 invalid request body` |
 | malformed or empty body | `400 invalid request body` |
 | `/groups/not-a-uuid/members`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
-| `GET` / `PATCH` / `DELETE` on the same path | `405 Method Not Allowed` + `Allow: OPTIONS, POST` (§13) |
+| `GET` / `PATCH` / `DELETE` on the same path | `405 Method Not Allowed` + `Allow: OPTIONS, POST` (§14) |
 | bad/absent token | §0, and no membership is written |
 
 The reply is a `GroupWithMembers`: the chat plus the whole member list, and no messages, so no preview is derived. The list is read after the `INSERT`, so its length is what the table holds and never what the request asked — adding 2 people to a group of 50 answers with 52.
@@ -415,7 +415,7 @@ curl -i -X DELETE localhost:3000/groups/$G/members/me -H "Authorization: Bearer 
 | a valid UUID owned by nobody | `404 group not found` |
 | the id of a private chat | `404 group not found` — its two members are its pair, and neither leaves it |
 | `/groups/not-a-uuid/members/me`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
-| `GET` / `POST` / `PATCH` / `PUT` on the same path | `405 Method Not Allowed` + `Allow: DELETE, OPTIONS` (§13) |
+| `GET` / `POST` / `PATCH` / `PUT` on the same path | `405 Method Not Allowed` + `Allow: DELETE, OPTIONS` (§14) |
 | `DELETE /groups/{groupId}/members` (without `/me`) | `405` — that path is `POST` only, and `POST` on it still answers `200`: the two routes do not collide |
 | bad/absent token | §0, and no membership is removed |
 
@@ -472,8 +472,8 @@ curl -i localhost:3000/me/chats -H "Authorization: Bearer $A"
 | a private chat | `name`/`photo` are the other member's, so one row reads differently for each of the two |
 | a chat nobody has written in | no `snippet` field, and the chat sorts last |
 | a caller in nothing, or who left every chat | `404 {"code":404,"message":"no conversations found"}` — an empty list is never a `200`, as in §3 |
-| `POST` / `PATCH` / `DELETE` on the path | `405 Method Not Allowed` + `Allow: GET, OPTIONS` (§13) |
-| `GET /me/chats/`, or `GET /chats` | `404` — no trailing slash, and nothing answers on the old path (§13) |
+| `POST` / `PATCH` / `DELETE` on the path | `405 Method Not Allowed` + `Allow: GET, OPTIONS` (§14) |
+| `GET /me/chats/`, or `GET /chats` | `404` — no trailing slash, and the bare collection is not a route: only `/chats/{chatId}` is (§13) |
 | bad/absent token | §0 |
 
 The borrow is live, and a group is never multiplied. A private chat holds `NULL` in `name` and `photoId` (the `CHECK` requires it) and reads both from the other member, so no copy is left to go stale on a `setMyUserName`; the `chatType` inside that same join is what keeps a group of three from coming back three times:
@@ -526,7 +526,46 @@ Nothing is written by this endpoint. It is the only read of a chat, so a call mu
 
 ---
 
-## 13. Router level — the answers that are not JSON
+## 13. `getConversation` — `GET /chats/{chatId}`
+The opened chat: the chat, its members and a page of its messages, newest first. It is the read §12 leads to, and the one route where a private chat id is not a `404`.
+
+The fixtures are the ones of §12: the group `G` holding A, B and C, the private chat `P` between A and B, the silent group `GS`, and `D` as the outsider.
+```shell
+curl -i localhost:3000/chats/$G -H "Authorization: Bearer $A"
+```
+
+| case | reply |
+|---|---|
+| a member opens a group | `200 {"id":..,"chatType":"group","name":..,"photo":..,"members":[..],"messages":[..]}` |
+| a member opens a private chat | `200`, and `name`/`photo` are the other member's, as in §12 |
+| the other member opens the same chat | `200`, and the name flips |
+| a chat nobody has written in | `200` and `"messages":[]` |
+| a message with text only | `"content":{"text":".."}`, no `photo` key |
+| a message with a photo only | `"content":{"photo":"/photos/<uuid>"}`, no `text` key |
+| a message with both | both fields |
+| a message nobody reacted to | `"comments":[]`, never `null` |
+| the id of a private chat | `200` — the one route where it is not a `404` |
+| a caller who is not a member | `403 {"code":403,"message":"not a member of the chat"}` |
+| a valid UUID owned by nobody | `404 {"code":404,"message":"chat not found"}` |
+| `/chats/not-a-uuid`, or the uppercase UUID | `400 {"code":400,"message":"invalid chat id"}` |
+| `POST` / `PATCH` / `DELETE` on the path | `405 Method Not Allowed` (§14) |
+| `GET /chats/{chatId}/` (trailing slash) | `404` (§14) |
+| bad/absent token | §0 |
+
+The reply is a `GroupDetail` or a `PrivateChatDetail`, the only endpoint that answers with either.
+
+- No `snippet`, and no truncation: the list holds the last message itself, so the 120-character message of §12 reads 50 there and 120 here.
+- One page of `ChatMessagesPageSize` (500), a `LIMIT` on the query and not a cut made afterwards, so a chat of any length is read in the same bounded time. Pagination is still missing (§17).
+- Ordering and state are the ones of §12, same rules written once per read: `ORDER BY date DESC, rowid DESC`, and `read` once every member exclude the sender has opened the chat after the message arrived.
+- A message photo is a URL, and a message without one keeps the field absent: `withMessagePhotoURL` returns early on the empty field, or `"/photos/"` — the prefix alone — would go out on every text-only message.
+- The comments of the whole page are one query, bucketed by `messageId`, so a chat of 500 messages is one query and not 500. A reaction on a message older than the page is never read.
+- 403 vs 404 in one read, as in §10: membership is an `EXISTS` column and not a condition of the `WHERE`, so the query finds the row whether or not the caller belongs to it — that is what tells "no chat owns this id" from "not yours". The row is read by the handler and never sent: a non-member is answered with the `403` body alone.
+- Three reads in one transaction: a message arriving between the first and the last would otherwise land in the list with its sender missing from the members read before it.
+- Nothing is written, and opening a chat does not mark it read: `lastReadDate` has no writer anywhere in the project yet (§17), so every message stays `received`.
+
+---
+
+## 14. Router level — the answers that are not JSON
 `httprouter` replies before any handler, so these carry a plain text body and not the `Error` schema.
 
 | request | reply |
@@ -547,7 +586,7 @@ curl -i -X OPTIONS localhost:3000/me/username -H 'Origin: http://localhost:5173'
 
 ---
 
-## 14. Scenarios — a sequence, not a single call
+## 15. Scenarios — a sequence, not a single call
 S1 — the token of `doLogin` is accepted by `authenticate`. `doLogin "s1$R"` → `201` id; `GET /users?username=s1$R` with that id → `200`. Nothing else checks that the two endpoints agree.
 
 S2 — the token survives a rename. `doLogin "s2$R"` → id; `setMyUserName "s2b$R"` → `200`; `getUsers` with the same id → `200`. The token is the user id and the id never changes: a rename must not log anybody out.
@@ -576,13 +615,14 @@ S13 — the list is the membership, seen from the other side. A fresh user `getM
 
 S14 — a rename reaches the chats list of somebody else. B `setMyUserName` → `200`; A `getMyConversations` → the private chat with B reads the new username in the same call, with no write to `chats`. The mirror of S8: a group rename writes a column, a private chat rename writes none and is read through the other member.
 
+S15 — the homepage preview is the last message of the opened chat. A+B `createPrivateChat` → P; two messages written by hand, the newer one 120 characters long; `getMyConversations` → the `snippet.id` is the id of the first message `getConversation` answers with, and its `text` is the first 50 characters of the same text the opened chat carries whole. The list holds no `messages` and the opened chat holds no `snippet`, and reading one does not change the other. The two endpoints read the same rows through different queries — one takes the last message of every chat, the other a page of one chat — so this is the only check that they agree on which message that is.
+
 ---
 
-## 15. Known mismatches with `doc/api.yaml` (implemented endpoints only)
+## 16. Known mismatches with `doc/api.yaml` (implemented endpoints only)
 Open:
 - `additionalProperties: false` is not enforced. `encoding/json` ignores unknown fields, so `{"username":"x","admin":true}` is accepted. Fix: `dec.DisallowUnknownFields()` in `decodeAndValidate`.
 - The request `Content-Type` is never read. `application/json` works where the spec says `application/merge-patch+json`. Permissive, not wrong.
-- `getMyConversations` has no cap. `getUsers` answers at most 20 rows (`LIMIT 20`) and says so in the spec, while the chats list returns every membership and the spec's `maxItems: 500` is a number nothing enforces. Harmless at the sizes this project runs at, and the fix is pagination rather than a bare `LIMIT`: cutting the list silently would hide chats from the homepage instead of shortening it.
 - A name is trimmed to be counted and stored untrimmed. `CountChars` measures `strings.TrimSpace(s)`, so `"  <100 chars>  "` passes the 1–100 rule and 104 characters reach the column and the reply, over `GroupName`'s `maxLength: 100`. Affects `ChatName` and, when it lands, `MessageText`; `Username` is safe because its pattern already refuses whitespace. Fix: trim before storing, or count the untrimmed string.
 ```shell
 curl -s -X PATCH localhost:3000/groups/$G/name -H "Authorization: Bearer $A" \
@@ -590,5 +630,7 @@ curl -s -X PATCH localhost:3000/groups/$G/name -H "Authorization: Bearer $A" \
 sqlite3 db/wasatext.db "SELECT length(name) FROM chats WHERE id='$G';"   # -> 104
 ```
 
-## 16. Open decisions
+## 17. Open decisions
+- A page is a cap and not yet pagination. `getMyConversations` stops at `UserChatsPageSize` (500) and `getConversation` at `ChatMessagesPageSize` (500), both matching the `maxItems` the spec declares, so neither is a mismatch any more. What neither has is a way to ask for the next page: over the limit the rows are simply cut, which hides chats from the homepage and history from a chat instead of shortening either. The spec already reserves the place for the fix — `# EXTRA: add cursor based pagination` under `components/parameters`.
+- Nothing writes `lastReadDate`. It is read by §12 and §13 to compute the state of a message and written by no endpoint, so `read` is unreachable in normal use and every message stays `received`. `getConversation` is the natural writer — opening a chat is what reading it means — but `GetConversation` is deliberately read-only and rolls back. Adding the write also picks an order: computing the states before the update leaves the caller seeing the messages as they arrived, updating first marks them read in the same reply. Either is consistent with the spec, which calls the state a fact about the members and not about the caller.
 - The search returns the caller. Nothing filters the caller out of `getUsers`, and the frontend uses that list to open a private chat — where picking yourself is a `400`. Either the query adds `AND id != <caller>`, or the frontend hides the row.

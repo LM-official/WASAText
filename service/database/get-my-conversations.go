@@ -8,7 +8,8 @@ import (
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 )
 
-// GetMyConversations returns the chats the user belongs to, the most recently active first
+// GetMyConversations returns the chats the user belongs to, the most recently active first,
+// and at most schemas.UserChatsPageSize of them: the client scrolls down for the older ones
 //
 // A group owns its name and photo, a private chat borrows them from the other member:
 // the row of a private chat holds NULL in both columns, so the pair is read from that member
@@ -49,8 +50,11 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.ChatSumm
 							 -- Newest first: a chat with no message has no date, and SQLite sorts NULL last in DESC,
 							 -- so it lands at the bottom of the list
 							 -- The id breaks the tie, so the same chats come back in the same order every time
-							 ORDER BY lm.date DESC, c.id;`,
-		schemas.ChatTypePrivate, userId, userId,
+							 ORDER BY lm.date DESC, c.id
+							 -- One page, and the list is already in the order the page is taken from:
+							 -- the most recently active chats are the ones this read gives back
+							 LIMIT ?;`,
+		schemas.ChatTypePrivate, userId, userId, schemas.UserChatsPageSize,
 	)
 	// Query error
 	if err != nil {

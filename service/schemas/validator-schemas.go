@@ -390,9 +390,11 @@ func (m *Message) IsValid() error {
 
 // Returns error if the Messages list does not meets the rules, otherwise nil
 func (m Messages) IsValid() error {
+	// A Messages is what one read of a chat gives back, so it is bound by the page and not by
+	// how many messages the chat holds: a chat at ChatMaxMessages still answers one page at a time
 	n := len(m)
-	if n > 100000 {
-		return fmt.Errorf("invalid messages number: %d; must be less than 100000", n)
+	if n > ChatMessagesPageSize {
+		return fmt.Errorf("invalid messages number: %d; must be at most %d", n, ChatMessagesPageSize)
 	}
 
 	for i := range m {

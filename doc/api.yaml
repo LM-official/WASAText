@@ -188,12 +188,12 @@ components:                                           # Reusable components
         - type: object                                # Override type to object
           properties:
             messages:
-              description: 'List of all the messages of the chat'
+              description: 'Newest page of the messages of the chat, newest first'
               type: array
               items:
                 $ref: '#/components/schemas/Message'
               minItems: 0                             # A chat nobody has written in yet
-              maxItems: 100000
+              maxItems: 500                           # One page: a chat holds up to 10000, scrolled 500 at a time
           required: [messages]                        # + id, chatType, name, photo, members already required above
 
 
@@ -784,14 +784,14 @@ paths:                                                # Rest endpoints
                 type: object
                 properties:
                   chats:
-                    description: 'List of user chats'
+                    description: 'Page of the chats of the user, the most recently active first'
                     type: array
                     items:
                       oneOf:                              # hats without full messages list
                         - $ref: '#/components/schemas/GroupSummary'
                         - $ref: '#/components/schemas/PrivateChatSummary'
                     minItems: 1                           # An empty list is a 404
-                    maxItems: 500
+                    maxItems: 500                         # One page: the query is capped at 500 rows
                     uniqueItems: true                     # One row per chat: a membership cannot be held twice
                 required: [chats]
                 additionalProperties: false               # No other properties allowed
@@ -835,52 +835,63 @@ paths:                                                # Rest endpoints
   /chats/{chatId}:
     get:
       operationId: 'getConversation'
-      description: 'Retrieves detailed information and the message history of a specific conversation'
-      summary: 'Get user chat by chat ID'
+      description: |
+        Retrieves a chat the authenticated user belongs to:
+        the chat itself, its members, and the newest page of its messages.
+        Both kinds are read here, and this is the one collection a private chat id answers under:
+        a group carries the name and the photo it owns, a private chat the ones of the other member.
+        A chat holds up to 10000 messages and one read answers with 500 of them, newest first,
+        the client asking for the older ones by scrolling up.
+        Each message carries its reactions, and an empty list while nobody has reacted to it.
+        There is no snippet here: the last message is the first element of the messages list, and it carries its full content.
+      summary: 'Get a chat with its members and its messages'
       tags: ['PrivateChat', 'Group']
       parameters:
         - $ref: '#/components/parameters/ParamChatId'
       responses:
         '200':
-          description: 'User chat retrieved successfully'
+          description: 'Chat retrieved successfully'
           content:
             application/json:
               schema:
-                description: 'User chat with full messages list'
-                oneOf:
+                description: 'The chat, its members and one page of its messages'
+                oneOf:                                # The two kinds carry the same shape, narrowed each its own way
                   - $ref: '#/components/schemas/GroupDetail'
                   - $ref: '#/components/schemas/PrivateChatDetail'
               example:
                 id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
                 chatType: 'private'
-                members: ['cf6a4180-65aa-42ec-a945-5fd21dec0538', 'c23a4180-65aa-42ec-a945-5fd21dec0538']
-                # Alice's POV
+                # Alice's POV: the name and the photo are Bob's own
                 name: 'Bob'
-                photo: 'https://api.wasatext.com/photos/bob.png'
-                # No snippet: the whole messages list is right below, the last of them included
+                photo: '/photos/d41f8a72-3b6c-4e19-8a52-0c7f5b21e934'
+                members: ['cf6a4180-65aa-42ec-a945-5fd21dec0538', 'c23a4180-65aa-42ec-a945-5fd21dec0538']
+                # Newest first, and no snippet: the last message is the first element of this list
                 messages:
+                  - id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+                    content:                          # Text and photo: the message carries both
+                      text: 'I will be there in 5 minutes.'
+                      photo: '/photos/7b9d3f21-4c8e-4a55-9f10-2ed6c4b7a318'
+                    date: '2025-11-15T18:35:00Z'
+                    user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
+                    state: 'received'                 # Bob has not opened the chat since it arrived
+                    comments: []                      # Nobody reacted to it, and the list is never absent
                   - id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
-                    content:
+                    content:                          # Text only: no photo to carry
                       text: 'Hey Bob, are you coming?'
                     date: '2025-11-15T18:30:00Z'
                     user: 'c23a4180-65aa-42ec-a945-5fd21dec0538'
                     state: 'read'
-                    comments: []
-                  - id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
-                    content:
-                      text: 'I will be there in 5 minutes.'
-                      photo: 'https://api.wasatext.com/photos/photo.png'
-                    date: '2025-11-15T18:35:00Z'
-                    user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
-                    state: 'received'
-                    comments: []
-        '400':
+                    comments:
+                      - id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                        user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
+                        emoji: '👍'
+        '400':                                        # The id in the URL is not a canonical UUID
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
+        '403':                                        # Not a member of the chat
           $ref: '#/components/responses/Forbidden'
-        '404':
+        '404':                                        # No chat owns that id
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'

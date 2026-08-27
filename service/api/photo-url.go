@@ -35,3 +35,23 @@ func withChatPhotoURLs(cs schemas.ChatSummaries) schemas.ChatSummaries {
 	}
 	return cs
 }
+
+// withMessagePhotoURL turns the stored photo id of a message into the URL the API returns
+// A user and a chat always have a photo, a message carries text, photo, or both:
+// the one without a photo is left alone, or the prefix would go out by itself as the URL of a photo that does not exist
+func withMessagePhotoURL(m schemas.Message) schemas.Message {
+	if m.Content.Photo == "" {
+		return m
+	}
+
+	m.Content.Photo = m.Content.Photo.Id().URL()
+	return m
+}
+
+// withMessagePhotoURLs is withMessagePhotoURL over a list of messages
+func withMessagePhotoURLs(ms schemas.Messages) schemas.Messages {
+	for i := range ms {
+		ms[i] = withMessagePhotoURL(ms[i])
+	}
+	return ms
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/endpoints.md section 14 — the scenarios: a sequence, not a single call
+# tests/endpoints.md section 15 — the scenarios: a sequence, not a single call
 cd /Users/lorenzo/WASAText
 H=localhost:3000
 R=$(date +%s)
@@ -141,6 +141,27 @@ CHATS_BEFORE=$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chats;")
 eq  "S14 B renames" 200 "$(code PATCH /me/username -H "$BU" -H "$MP" -d "{\"username\":\"s14renamed$R\"}")"
 has "S14 A reads the new name" "s14renamed$R" "$(body GET /me/chats -H "$AU")"
 eq  "S14 no row written to chats" "$CHATS_BEFORE" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chats;")"
+
+echo "S15 — the homepage preview is the last message of the opened chat"
+A=$(mk "s15a$R"); B=$(mk "s15b$R"); AU="Authorization: Bearer $A"; BU="Authorization: Bearer $B"
+P=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
+sqlite3 db/wasatext.db "DELETE FROM messages WHERE id IN ('55555555-5555-4555-8555-555555555555','66666666-6666-4666-8666-666666666666');"
+LONG=$(printf 'abcdefghij%.0s' $(seq 1 12))
+sqlite3 db/wasatext.db "INSERT INTO messages (id,chatId,userId,text,photoId,date) VALUES
+ ('55555555-5555-4555-8555-555555555555','$P','$B','older one',NULL,'2026-08-24T09:00:00Z'),
+ ('66666666-6666-4666-8666-666666666666','$P','$B','$LONG',NULL,'2026-08-24T10:00:00Z');"
+LIST=$(body GET /me/chats -H "$AU")
+DET=$(body GET /chats/$P -H "$AU")
+eq  "S15 the preview is the newest message" \
+    "$(echo "$LIST" | sed 's/.*"snippet":{"id":"\([^"]*\)".*/\1/')" \
+    "$(echo "$DET" | sed 's/.*"messages":\[{"id":"\([^"]*\)".*/\1/')"
+eq  "S15 and it is the one just written" '66666666-6666-4666-8666-666666666666' "$(echo "$DET" | sed 's/.*"messages":\[{"id":"\([^"]*\)".*/\1/')"
+has "S15 the list cuts the text to 50" "\"text\":\"$(printf 'abcdefghij%.0s' $(seq 1 5))\"" "$LIST"
+has "S15 the opened chat keeps it whole" "\"text\":\"$LONG\"" "$DET"
+eq  "S15 the older message is only in the opened chat" 2 "$(echo "$DET" | grep -o '"state":"' | wc -l | tr -d ' ')"
+hasnt "S15 the list carries no messages list" '"messages":' "$LIST"
+has "S15 the opened chat carries no preview" '"messages":' "$DET"
+eq  "S15 opening the chat does not change the list" "$LIST" "$(body GET /me/chats -H "$AU")"
 
 echo
 echo "==================================================="

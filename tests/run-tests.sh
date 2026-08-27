@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/endpoints.md, sections 0-13, for the endpoints registered in api-handler.go
+# tests/endpoints.md, sections 0-14, for the endpoints registered in api-handler.go
 cd /Users/lorenzo/WASAText
 H=localhost:3000
 R=$(date +%s)
@@ -326,16 +326,82 @@ PG=$(POS "$G"); PP=$(POS "$P"); PS=$(POS "$GS")
 if [ -n "$PG" ] && [ -n "$PP" ] && [ -n "$PS" ] && [ "$PS" -gt "$PG" ] && [ "$PS" -gt "$PP" ]; then ok
 else no "12 message-less chat sorts after the ones with messages" "P=$PP G=$PG silent=$PS"; fi
 
-echo "### 13. router level"
-eq "13 unknown path"   404 "$(code GET /nope)"
-eq "13 wrong method"   405 "$(code GET /session)"
-eq "13 trailing slash" 404 "$(code GET /users/ -H "$AU")"
+echo "### 13. getConversation  (reply: GroupDetail | PrivateChatDetail, with the messages)"
+GC=$(body GET /chats/$G -H "$AU")
+eq  "13 group 200"        200 "$(code GET /chats/$G -H "$AU")"
+has "13 group id"         "\"id\":\"$G\"" "$GC"
+has "13 group chatType"   '"chatType":"group"' "$GC"
+eq  "13 group answers with the name it owns" "$(sqlite3 db/wasatext.db "SELECT name FROM chats WHERE id='$G';")" "$(echo "$GC" | sed 's/.*"chatType":"group","name":"\([^"]*\)".*/\1/')"
+has "13 photo is a URL"   '"photo":"/photos/' "$GC"
+has "13 has members"      '"members":[' "$GC"
+has "13 has messages"     '"messages":[' "$GC"
+hasnt "13 no snippet in the opened chat" '"snippet"' "$GC"
+eq  "13 group holds three members" 3 "$(echo "$GC" | grep -o '"members":\[[^]]*\]' | grep -o '[0-9a-f-]\{36\}' | wc -l | tr -d ' ')"
+# a private chat reads the name of the other member, so one row answers each of the two differently
+PC=$(body GET /chats/$P -H "$AU")
+eq  "13 private 200"      200 "$(code GET /chats/$P -H "$AU")"
+has "13 private chatType" '"chatType":"private"' "$PC"
+has "13 private named after the other" "\"name\":\"bob_renamed$R\"" "$PC"
+has "13 private name flips" "\"name\":\"alice_new$R\"" "$(body GET /chats/$P -H "$BU")"
+eq  "13 private holds two members" 2 "$(echo "$PC" | grep -o '"members":\[[^]]*\]' | grep -o '[0-9a-f-]\{36\}' | wc -l | tr -d ' ')"
+# newest first, rowid breaking the tie inside the same second, exactly as the snippet of section 12
+eq  "13 messages newest first" "SECOND in that second FIRST in that second " "$(echo "$PC" | grep -o 'SECOND in that second\|FIRST in that second' | tr '\n' ' ')"
+has "13 text only message"  '"content":{"text":"SECOND in that second"}' "$PC"
+has "13 photo only message" "\"content\":{\"photo\":\"/photos/$DEF\"}" "$PC"
+hasnt "13 no bare prefix on a message without a photo" '"photo":"/photos/"' "$PC"
+has "13 the opened chat carries the whole text, where the snippet cuts it" "\"text\":\"$LONGTEXT\"" "$GC"
+# the comments, written by hand: commentMessage does not exist yet
+CMIDS="'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'"
+sqlite3 db/wasatext.db "DELETE FROM comments WHERE id IN ($CMIDS);"
+sqlite3 db/wasatext.db "INSERT INTO comments (id,messageId,userId,emoji) VALUES
+ ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','44444444-4444-4444-8444-444444444444','$A','👍'),
+ ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','33333333-3333-4333-8333-333333333333','$A','😂');"
+PC2=$(body GET /chats/$P -H "$AU")
+has "13 a comment lands on its own message" '"content":{"text":"SECOND in that second"},"comments":[{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"' "$PC2"
+has "13 no comment is an empty list and never null" '"comments":[]' "$PC2"
+# the state is the one of section 12: computed from lastReadDate, the same value for every member
+has "13 read on the group"           '"state":"read"' "$GC"
+has "13 received on the private chat" '"state":"received"' "$PC"
+has "13 a chat with no message answers an empty list" '"messages":[]' "$(body GET /chats/$GS -H "$AU")"
+# the one id that answers here and not under /groups/: both kinds are read through /chats/
+eq  "13 private chat id under /groups/" 404 "$(code PATCH /groups/$P/name -H "$AU" -H "$MP" -d '{"name":"x"}')"
+eq  "13 private chat id under /chats/"  200 "$(code GET /chats/$P -H "$AU")"
+# one page: a chat answers at most schemas.ChatMessagesPageSize messages, whatever it holds
+GP=$(body POST /groups -H "$AU" -F "data={\"name\":\"Page $R\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+sqlite3 db/wasatext.db "DELETE FROM messages WHERE id LIKE 'page____-0000-4000-8000-000000000000';"
+sqlite3 db/wasatext.db "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < 501)
+ INSERT INTO messages (id,chatId,userId,text,photoId,date)
+ SELECT printf('page%04d-0000-4000-8000-000000000000', i), '$GP', '$A', 'm'||i, NULL,
+        strftime('%Y-%m-%dT%H:%M:%SZ', datetime('2026-08-24T00:00:00Z', '+'||i||' seconds')) FROM n;"
+eq  "13 501 messages answer one page of 500" 500 "$(body GET /chats/$GP -H "$AU" | grep -o '"state":"' | wc -l | tr -d ' ')"
+eq  "13 not a member"     403 "$(code GET /chats/$G -H "$DU")"
+has "13 403 body"         '"message":"not a member of the chat"' "$(body GET /chats/$G -H "$DU")"
+eq  "13 unknown chat"     404 "$(code GET /chats/11111111-2222-4333-8444-555555555555 -H "$AU")"
+has "13 404 body"         '"message":"chat not found"' "$(body GET /chats/11111111-2222-4333-8444-555555555555 -H "$AU")"
+eq  "13 bad id"           400 "$(code GET /chats/not-a-uuid -H "$AU")"
+has "13 400 body"         '"message":"invalid chat id"' "$(body GET /chats/not-a-uuid -H "$AU")"
+eq  "13 uppercase uuid"   400 "$(code GET /chats/$(echo $G | tr a-f A-F) -H "$AU")"
+eq  "13 POST on path"     405 "$(code POST /chats/$G -H "$AU")"
+eq  "13 trailing slash"   404 "$(code GET /chats/$G/ -H "$AU")"
+eq  "13 no token"         401 "$(code GET /chats/$G)"
+# nothing is written: this is a read, and opening a chat does not mark it read either
+CNT() { sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM chats)||'/'||(SELECT COUNT(*) FROM chat_members)||'/'||(SELECT COUNT(*) FROM messages)||'/'||(SELECT COUNT(*) FROM comments);"; }
+LRD() { sqlite3 db/wasatext.db "SELECT quote(lastReadDate) FROM chat_members WHERE chatId='$P' AND userId='$A';"; }
+BEF13=$(CNT); LR13=$(LRD)
+body GET /chats/$G -H "$AU" > /dev/null; body GET /chats/$P -H "$AU" > /dev/null
+eq  "13 nothing is written" "$BEF13" "$(CNT)"
+eq  "13 opening a chat leaves lastReadDate untouched" "$LR13" "$(LRD)"
+
+echo "### 14. router level"
+eq "14 unknown path"   404 "$(code GET /nope)"
+eq "14 wrong method"   405 "$(code GET /session)"
+eq "14 trailing slash" 404 "$(code GET /users/ -H "$AU")"
 CORS=$(curl -s -D- -o /dev/null -X OPTIONS "$H/me/username" -H 'Origin: http://localhost:5173' \
   -H 'Access-Control-Request-Method: PATCH' -H 'Access-Control-Request-Headers: authorization,content-type')
-has "13 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
-has "13 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
-has "13 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
-has "13 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
+has "14 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
+has "14 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
+has "14 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
+has "14 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
 
 echo
 echo "==================================================="
