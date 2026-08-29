@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 )
@@ -28,7 +29,7 @@ func (db *appdbimpl) SetGroupName(userId schemas.UserId, groupId schemas.ChatId,
 		}
 		// Error reading the group
 		if err != nil {
-			return schemas.ChatBase{}, err
+			return schemas.ChatBase{}, fmt.Errorf("error checking if group exists: %w", err)
 		}
 
 		// The caller is not in the group
@@ -36,7 +37,7 @@ func (db *appdbimpl) SetGroupName(userId schemas.UserId, groupId schemas.ChatId,
 	}
 	// Error during update
 	if err != nil {
-		return schemas.ChatBase{}, err
+		return schemas.ChatBase{}, fmt.Errorf("error updating group name: %w", err)
 	}
 
 	// The chatType is a condition of the update above and never a value read back from it

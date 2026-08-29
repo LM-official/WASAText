@@ -29,7 +29,7 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 	newUUID, err := uuid.NewV4()
 	// Error generating the UUID
 	if err != nil {
-		return schemas.ChatId(""), false, err
+		return schemas.ChatId(""), false, fmt.Errorf("cannot generate a new UUID: %w", err)
 	}
 	newId := schemas.ChatId(newUUID.String())
 
@@ -50,18 +50,18 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 						 ON CONFLICT(pairKey) DO NOTHING;`, newId, schemas.ChatTypePrivate, key)
 	// Error inserting the new chat
 	if err != nil {
-		return schemas.ChatId(""), false, err
+		return schemas.ChatId(""), false, fmt.Errorf("cannot insert the new chat %q: %w", newId, err)
 	}
 
 	written, err := res.RowsAffected()
 	if err != nil {
-		return schemas.ChatId(""), false, err
+		return schemas.ChatId(""), false, fmt.Errorf("cannot read the number of rows written for the new chat %q: %w", newId, err)
 	}
 	// No row written: this pair already owns a chat
 	if written == 0 {
 		var id schemas.ChatId
 		if err := tx.QueryRow(`SELECT id FROM chats WHERE pairKey = ?;`, key).Scan(&id); err != nil {
-			return schemas.ChatId(""), false, err
+			return schemas.ChatId(""), false, fmt.Errorf("cannot read the id of the chat already owned by the pair %q: %w", key, err)
 		}
 		// Chat already exists
 		return id, true, nil
@@ -75,7 +75,7 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 		newId, userId1, joinDate, newId, userId2, joinDate)
 	// Error inserting the members
 	if err != nil {
-		return schemas.ChatId(""), false, err
+		return schemas.ChatId(""), false, fmt.Errorf("cannot insert the members of the new chat %q: %w", newId, err)
 	}
 
 	if err := tx.Commit(); err != nil {

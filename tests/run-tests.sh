@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/endpoints.md, sections 0-15, for the endpoints registered in api-handler.go
+# tests/endpoints.md, sections 0-16, for the endpoints registered in api-handler.go
 cd /Users/lorenzo/WASAText
 H=localhost:3000
 PASS=0; FAIL=0; FAILED=()
@@ -522,16 +522,127 @@ if [ "$(RANK $GN)" -lt "$(RANK $GO)" ]; then ok; else no "14 the chat written la
 body POST /chats/$GO/messages -H "$AU" -F 'text=and now this one' > /dev/null
 if [ "$(RANK $GO)" -lt "$(RANK $GN)" ]; then ok; else no "14 and writing again moves it back up" "GO=$(RANK $GO) GN=$(RANK $GN)"; fi
 
-echo "### 15. router level"
-eq "15 unknown path"   404 "$(code GET /nope)"
-eq "15 wrong method"   405 "$(code GET /session)"
-eq "15 trailing slash" 404 "$(code GET /users/ -H "$AU")"
+echo "### 15. forwardMessage  (reply: Message, 201)"
+# A member of both chats, B source-only, C destination-only, D neither — same fixture shape as §15 of endpoints.md
+PS=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
+PD=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$C\"}" | id)
+SRC_TEXT=$(body POST /chats/$PS/messages -H "$BU" -F 'text=forward this text')
+MS=$(echo "$SRC_TEXT" | id)
+SRC_PHOTO=$(body POST /chats/$PS/messages -H "$BU" -F "photoFile=@$PNG")
+MPH=$(echo "$SRC_PHOTO" | id)
+MPHOTO=$(echo "$SRC_PHOTO" | sed 's/.*"photo":"\([^"]*\)".*/\1/')
+SRC_BOTH=$(body POST /chats/$PS/messages -H "$BU" -F 'text=both fields' -F "photoFile=@$PNG")
+MB=$(echo "$SRC_BOTH" | id)
+MBPHOTO=$(echo "$SRC_BOTH" | sed 's/.*"photo":"\([^"]*\)".*/\1/')
+SRC_ROW=$(sqlite3 db/wasatext.db "SELECT userId||'|'||text||'|'||quote(photoId)||'|'||date FROM messages WHERE id='$MS';")
+PHOTOS15=$(ls db/photos | wc -l | tr -d ' ')
+
+FW_FILE=/tmp/wasatext-forward-response-$$.json
+FW_CODE=$(curl -s -o "$FW_FILE" -w '%{http_code}' -X POST "$H/chats/$PD/messages/forwards" \
+  -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")
+FW=$(tr -d '\n' < "$FW_FILE")
+eq  "15 text-only source"        201 "$FW_CODE"
+has "15 text copied"             '"content":{"text":"forward this text"}' "$FW"
+hasnt "15 no photo key on text-only" '"photo"' "$FW"
+has "15 born with no reaction"   '"comments":[]' "$FW"
+has "15 carries its own date"    '"date":"20' "$FW"
+has "15 user is the caller"      "\"user\":\"$A\"" "$FW"
+hasnt "15 user is not the source sender" "\"user\":\"$B\"" "$FW"
+if [ "$(echo "$FW" | id)" != "$MS" ]; then ok; else no "15 new id, not the source id" "$MS"; fi
+FWID=$(echo "$FW" | id)
+FWDATE=$(echo "$FW" | sed 's/.*"date":"\([^"]*\)".*/\1/')
+has "15 received while C is behind" '"state":"received"' "$FW"
+eq "15 reply date is the stored instant" 1 \
+   "$(sqlite3 db/wasatext.db "SELECT julianday('$FWDATE') = julianday((SELECT date FROM messages WHERE id='$FWID'));")"
+eq "15 sender caught up to the exact copy date" \
+   "$(sqlite3 db/wasatext.db "SELECT date FROM messages WHERE id='$FWID';")" \
+   "$(sqlite3 db/wasatext.db "SELECT lastReadDate FROM chat_members WHERE chatId='$PD' AND userId='$A';")"
+
+FWP=$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MPH\"}")
+has   "15 exact photo URL copied"     "\"photo\":\"$MPHOTO\"" "$FWP"
+hasnt "15 no text key on photo-only" '"text"' "$FWP"
+
+FWB=$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MB\"}")
+has "15 both fields copied, text"  '"text":"both fields"' "$FWB"
+has "15 both fields copied, exact photo" "\"photo\":\"$MBPHOTO\"" "$FWB"
+eq  "15 forwarding creates no photo file" "$PHOTOS15" "$(ls db/photos | wc -l | tr -d ' ')"
+
+# comments belong to the source row and are not copied
+sqlite3 db/wasatext.db "INSERT INTO comments (id, messageId, userId, emoji) VALUES ('99999999-0000-4000-8000-000000000000', '$MS', '$B', '👍');"
+FWC=$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")
+FWCID=$(echo "$FWC" | id)
+has "15 source comments are not copied" '"comments":[]' "$FWC"
+eq  "15 copied row owns no comment" 0 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$FWCID';")"
+eq  "15 source keeps its comment"   1 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$MS';")"
+eq  "15 source message stays untouched" "$SRC_ROW" \
+    "$(sqlite3 db/wasatext.db "SELECT userId||'|'||text||'|'||quote(photoId)||'|'||date FROM messages WHERE id='$MS';")"
+
+# forwarding into the source chat itself is allowed, and any chat kind is a valid destination
+eq "15 same-chat forward" 201 "$(code POST /chats/$PS/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq "15 group destination"  201 "$(code POST /chats/$G/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+# a destination with no other member has nobody to hold the copy at received
+GFS=$(body POST /groups -H "$AU" -F "data={\"name\":\"Forward Solo\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+code DELETE /groups/$GFS/members/me -H "$BU" > /dev/null
+has "15 alone in destination, born read" '"state":"read"' \
+    "$(body POST /chats/$GFS/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+
+# who may forward, and between which chats
+eq  "15 belongs to source and destination" 201 "$(code POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+REFUSED_BEFORE=$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM messages WHERE chatId='$PD')||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$PD' ORDER BY userId));")
+eq  "15 source-only member"      403 "$(code POST /chats/$PD/messages/forwards -H "$BU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 destination-only member" 403 "$(code POST /chats/$PD/messages/forwards -H "$CU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 belongs to neither"      403 "$(code POST /chats/$PD/messages/forwards -H "$DU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+has "15 403 body" '"message":"not a member of the chat"' "$(body POST /chats/$PD/messages/forwards -H "$DU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 every 403 writes nothing" "$REFUSED_BEFORE" \
+    "$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM messages WHERE chatId='$PD')||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$PD' ORDER BY userId));")"
+
+# not found: message before chat
+NOTFOUND_BEFORE=$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages;")
+eq  "15 unknown message"  404 "$(code POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d '{"messageId":"11111111-2222-4333-8444-555555555555"}')"
+has "15 message 404 body" '"message":"message not found"' "$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d '{"messageId":"11111111-2222-4333-8444-555555555555"}')"
+eq  "15 unknown chat"     404 "$(code POST /chats/11111111-2222-4333-8444-555555555555/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+has "15 chat 404 body"    '"message":"chat not found"' "$(body POST /chats/11111111-2222-4333-8444-555555555555/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+has "15 missing source wins over missing destination" '"message":"message not found"' \
+    "$(body POST /chats/11111111-2222-4333-8444-555555555555/messages/forwards -H "$AU" -H "$JS" -d '{"messageId":"22222222-2222-4222-8222-222222222222"}')"
+eq  "15 every 404 writes no message" "$NOTFOUND_BEFORE" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages;")"
+
+# the body and the ids
+eq  "15 empty messageId"    400 "$(code POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d '{"messageId":""}')"
+eq  "15 missing messageId"  400 "$(code POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d '{}')"
+has "15 400 body"           '"message":"invalid request body"' "$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d '{}')"
+eq  "15 malformed body"     400 "$(code POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d '{')"
+eq  "15 uppercase messageId" 400 "$(code POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$(echo $MS | tr a-f A-F)\"}")"
+eq  "15 bad chat id"        400 "$(code POST /chats/not-a-uuid/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+has "15 bad chat id body"   '"message":"invalid chat id"' "$(body POST /chats/not-a-uuid/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 uppercase chat id"  400 "$(code POST /chats/$(echo $PD | tr a-f A-F)/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+has "15 bad destination id wins over malformed body" '"message":"invalid chat id"' \
+    "$(body POST /chats/not-a-uuid/messages/forwards -H "$AU" -H "$JS" -d '{')"
+EXTRA_CODE=$(curl -s -o "$FW_FILE" -w '%{http_code}' -X POST "$H/chats/$PD/messages/forwards" \
+  -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\",\"admin\":true}")
+EXTRA=$(tr -d '\n' < "$FW_FILE")
+eq  "15 unknown JSON field is ignored" 201 "$EXTRA_CODE"
+has "15 extra field still returns the copy" '"text":"forward this text"' "$EXTRA"
+
+# the destination cap is checked here too — GF is already full from §14
+eq  "15 destination full"  400 "$(code POST /chats/$GF/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+has "15 full body"         '"message":"the chat is full"' "$(body POST /chats/$GF/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 and the refused one wrote no row" 10000 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE chatId='$GF';")"
+
+# router-level answers on this route
+eq "15 GET on the path" 405 "$(code GET /chats/$PD/messages/forwards -H "$AU")"
+eq "15 trailing slash"  404 "$(code POST /chats/$PD/messages/forwards/ -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq "15 no token wins over malformed body" 401 "$(code POST /chats/$PD/messages/forwards -H "$JS" -d '{')"
+
+echo "### 16. router level"
+eq "16 unknown path"   404 "$(code GET /nope)"
+eq "16 wrong method"   405 "$(code GET /session)"
+eq "16 trailing slash" 404 "$(code GET /users/ -H "$AU")"
 CORS=$(curl -s -D- -o /dev/null -X OPTIONS "$H/me/username" -H 'Origin: http://localhost:5173' \
   -H 'Access-Control-Request-Method: PATCH' -H 'Access-Control-Request-Headers: authorization,content-type')
-has "15 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
-has "15 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
-has "15 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
-has "15 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
+has "16 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
+has "16 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
+has "16 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
+has "16 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
 
 echo
 echo "==================================================="

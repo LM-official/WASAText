@@ -1,6 +1,8 @@
 package database
 
 import (
+	"fmt"
+
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 	"github.com/gofrs/uuid"
 )
@@ -12,7 +14,7 @@ func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, e
 	newUUID, err := uuid.NewV4()
 	// Error generating the UUID
 	if err != nil {
-		return schemas.UserId(""), false, err
+		return schemas.UserId(""), false, fmt.Errorf("cannot generate a new UUID: %w", err)
 	}
 	newId := schemas.UserId(newUUID.String())
 
@@ -24,19 +26,19 @@ func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, e
 						   ON CONFLICT(username) DO NOTHING;`, newId, username, schemas.DefaultPhotoId)
 	// Error inserting the new user
 	if err != nil {
-		return schemas.UserId(""), false, err
+		return schemas.UserId(""), false, fmt.Errorf("cannot insert the new user %q: %w", newId, err)
 	}
 
 	written, err := res.RowsAffected()
 	if err != nil {
-		return schemas.UserId(""), false, err
+		return schemas.UserId(""), false, fmt.Errorf("cannot get the number of rows affected by the insert of the new user %q: %w", newId, err)
 	}
 	// No row written: the username is already taken by a user, and that user is the one logging in
 	if written == 0 {
 		var id schemas.UserId
 		// Error searching for the user
 		if err := db.c.QueryRow(`SELECT id FROM users WHERE username = ?;`, username).Scan(&id); err != nil {
-			return schemas.UserId(""), false, err
+			return schemas.UserId(""), false, fmt.Errorf("cannot find the existing user %q: %w", username, err)
 		}
 		// User found, login
 		return id, true, nil

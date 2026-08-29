@@ -1,6 +1,10 @@
 package database
 
-import "github.com/MercuriLorenzo/WASAText/service/schemas"
+import (
+	"fmt"
+
+	"github.com/MercuriLorenzo/WASAText/service/schemas"
+)
 
 // PhotoIsReferenced reports whether any row still points at photoId.
 // It is the rule that decides when a photo file may be deleted: a photo is dropped only when this returns false,
@@ -18,7 +22,7 @@ func (db *appdbimpl) PhotoIsReferenced(photoId schemas.PhotoId) (bool, error) {
 		photoId, photoId, photoId).Scan(&referenced)
 	// Error during the search
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("cannot check whether the photo is still referenced: %w", err)
 	}
 	return referenced, nil
 }

@@ -35,7 +35,6 @@ func (db *appdbimpl) AddToGroup(userId schemas.UserId, groupId schemas.ChatId, u
 					   FROM chats c WHERE c.id = ? AND c.chatType = ?;`,
 		userId, groupId, schemas.ChatTypeGroup,
 	).Scan(&chat.Id, &chat.Name, &chat.Photo, &isMember)
-
 	// No group owns that id: it may not exist at all, or be a private chat
 	if errors.Is(err, sql.ErrNoRows) {
 		return schemas.ChatWithMembers{}, ErrChatNotFound

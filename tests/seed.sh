@@ -52,7 +52,7 @@ sqlite3 "$DB" "PRAGMA foreign_keys=ON;
 find db/photos -type f ! -name "$DEFAULT_PHOTO" -delete
 
 # ---------- cast ----------
-# The four the sections are written around: dave belongs to nothing and is the outsider of §8-§11
+# The four the sections are written around: dave belongs to nothing and is the outsider through §15
 for u in alice bob carl dave; do login "$u" > /dev/null; done
 
 # §3 reads these two together: '_' is a LIKE wildcard and a legal username character,

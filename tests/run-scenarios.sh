@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/endpoints.md section 15 — the scenarios: a sequence, not a single call
+# tests/endpoints.md section 17, S1-S16 — the scenarios: a sequence, not a single call
 cd /Users/lorenzo/WASAText
 H=localhost:3000
 R=$(date +%s)
@@ -168,6 +168,30 @@ has "S15 and reads read once it has been"                     '"state":"read"'  
 eq  "S15 opening the chat changes nothing else in the list" \
     "$(echo "$LIST"  | sed 's/"state":"[a-z]*"/"state":"X"/g')" \
     "$(echo "$AFTER" | sed 's/"state":"[a-z]*"/"state":"X"/g')"
+
+echo "S16 — a forwarded message becomes the destination's message and preview without changing its source"
+A=$(mk "s16a$R"); B=$(mk "s16b$R"); C=$(mk "s16c$R")
+AU="Authorization: Bearer $A"; BU="Authorization: Bearer $B"; CU="Authorization: Bearer $C"
+PS=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
+PD=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$C\"}" | id)
+SRC=$(body POST /chats/$PS/messages -H "$BU" -F 'text=forwarded across chats' -F "photoFile=@$PNG")
+MS=$(echo "$SRC" | id); PSRC=$(echo "$SRC" | photo)
+FWD=$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")
+MF=$(echo "$FWD" | id); PFWD=$(echo "$FWD" | photo)
+ne  "S16 the copy has a new id" "$MS" "$MF"
+eq  "S16 the copy reuses the exact photo" "$PSRC" "$PFWD"
+has "S16 the copy carries the source text" '"text":"forwarded across chats"' "$FWD"
+has "S16 the caller is the copy's sender" "\"user\":\"$A\"" "$FWD"
+SRC_AFTER=$(body GET /chats/$PS -H "$AU")
+has "S16 the source message remains in its chat" "\"id\":\"$MS\"" "$SRC_AFTER"
+has "S16 the source keeps its original sender" "\"user\":\"$B\"" "$SRC_AFTER"
+LIST=$(body GET /me/chats -H "$CU")
+has "S16 the destination preview is the copy" "\"snippet\":{\"id\":\"$MF\"" "$LIST"
+has "S16 its preview is received before C opens it" '"state":"received"' "$LIST"
+DEST=$(body GET /chats/$PD -H "$CU")
+has "S16 the opened destination contains the copy" "\"id\":\"$MF\"" "$DEST"
+has "S16 the opened destination carries the same photo" "\"photo\":\"/photos/$PFWD\"" "$DEST"
+has "S16 the preview becomes read after C opens it" '"state":"read"' "$(body GET /me/chats -H "$CU")"
 
 echo
 echo "==================================================="

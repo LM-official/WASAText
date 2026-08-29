@@ -1,6 +1,8 @@
 package database
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
@@ -23,15 +25,19 @@ func (db *appdbimpl) SetMyPhoto(userId schemas.UserId, newPhotoId schemas.PhotoI
 	// Get the photo that is being replaced
 	var oldPhotoId schemas.PhotoId
 	err = tx.QueryRow(`SELECT photoId FROM users WHERE id = ?;`, userId).Scan(&oldPhotoId)
+	// No user owns that id
+	if errors.Is(err, sql.ErrNoRows) {
+		return schemas.User{}, "", ErrUserNotFound
+	}
 	// Error fetching the current photo
 	if err != nil {
-		return schemas.User{}, "", err
+		return schemas.User{}, "", fmt.Errorf("cannot read the user %q: %w", userId, err)
 	}
 
 	_, err = tx.Exec(`UPDATE users SET photoId = ? WHERE id = ?;`, newPhotoId, userId)
 	// Error during update
 	if err != nil {
-		return schemas.User{}, "", err
+		return schemas.User{}, "", fmt.Errorf("error updating user photo: %w", err)
 	}
 
 	// Get the updated user
@@ -39,7 +45,7 @@ func (db *appdbimpl) SetMyPhoto(userId schemas.UserId, newPhotoId schemas.PhotoI
 	err = tx.QueryRow(`SELECT id, username, photoId FROM users WHERE id = ?;`, userId).Scan(&user.Id, &user.Username, &user.Photo)
 	// Error fetching updated user
 	if err != nil {
-		return schemas.User{}, "", err
+		return schemas.User{}, "", fmt.Errorf("cannot read the updated user %q: %w", userId, err)
 	}
 
 	if err := tx.Commit(); err != nil {

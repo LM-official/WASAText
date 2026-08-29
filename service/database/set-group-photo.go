@@ -34,7 +34,7 @@ func (db *appdbimpl) SetGroupPhoto(userId schemas.UserId, groupId schemas.ChatId
 	}
 	// Error fetching the current photo
 	if err != nil {
-		return schemas.ChatBase{}, "", err
+		return schemas.ChatBase{}, "", fmt.Errorf("error reading the current group photo: %w", err)
 	}
 
 	var chat schemas.ChatBase
@@ -51,7 +51,7 @@ func (db *appdbimpl) SetGroupPhoto(userId schemas.UserId, groupId schemas.ChatId
 	}
 	// Error during update
 	if err != nil {
-		return schemas.ChatBase{}, "", err
+		return schemas.ChatBase{}, "", fmt.Errorf("error updating group photo: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

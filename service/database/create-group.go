@@ -18,7 +18,7 @@ func (db *appdbimpl) CreateGroup(creator schemas.UserId, userIds schemas.Members
 	newUUID, err := uuid.NewV4()
 	// Error generating the UUID
 	if err != nil {
-		return schemas.ChatId(""), err
+		return schemas.ChatId(""), fmt.Errorf("cannot generate a new UUID: %w", err)
 	}
 	newId := schemas.ChatId(newUUID.String())
 
@@ -51,14 +51,14 @@ func (db *appdbimpl) CreateGroup(creator schemas.UserId, userIds schemas.Members
 	_, err = tx.Exec(`INSERT INTO chats (id, chatType, name, photoId, pairKey) VALUES (?, ?, ?, ?, NULL);`, newId, schemas.ChatTypeGroup, name, photoId)
 	// Error inserting the new chat
 	if err != nil {
-		return schemas.ChatId(""), err
+		return schemas.ChatId(""), fmt.Errorf("cannot insert the new chat %q: %w", newId, err)
 	}
 
 	// New chat created, update the memberships
 	_, err = tx.Exec(`INSERT INTO chat_members (chatId, userId, lastReadDate) VALUES `+placeholders+`;`, args...)
 	// Error inserting the members
 	if err != nil {
-		return schemas.ChatId(""), err
+		return schemas.ChatId(""), fmt.Errorf("cannot insert the members of the new chat %q: %w", newId, err)
 	}
 
 	if err := tx.Commit(); err != nil {

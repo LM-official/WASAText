@@ -1,6 +1,7 @@
 package database
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
@@ -29,7 +30,7 @@ func (db *appdbimpl) UsersExist(userIds schemas.Members) (bool, error) {
 	var found int
 	// Error during the search
 	if err := db.c.QueryRow(`SELECT COUNT(*) FROM users WHERE id IN (`+placeholders+`);`, args...).Scan(&found); err != nil {
-		return false, err
+		return false, fmt.Errorf("error counting users: %w", err)
 	}
 
 	return found == len(userIds), nil

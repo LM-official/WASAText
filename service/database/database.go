@@ -57,6 +57,7 @@ type AppDatabase interface {
 	GetMyConversations(userId schemas.UserId) (schemas.ChatSummaries, error)
 	GetConversation(userId schemas.UserId, chatId schemas.ChatId) (schemas.ChatDetail, error)
 	SendMessage(userId schemas.UserId, chatId schemas.ChatId, text schemas.MessageText, photoId schemas.PhotoId) (schemas.Message, error)
+	ForwardMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) (schemas.Message, error)
 	CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.UserId) (schemas.ChatId, bool, error)
 	CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatId, error)
 	SetGroupName(userId schemas.UserId, groupId schemas.ChatId, newName schemas.ChatName) (schemas.ChatBase, error)

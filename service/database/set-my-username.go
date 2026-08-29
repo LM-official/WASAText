@@ -2,6 +2,7 @@ package database
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 	sqlite3 "github.com/mattn/go-sqlite3"
@@ -26,7 +27,7 @@ func (db *appdbimpl) SetMyUserName(userId schemas.UserId, newUsername schemas.Us
 		}
 
 		// Error during update
-		return schemas.User{}, err
+		return schemas.User{}, fmt.Errorf("error updating user username: %w", err)
 	}
 
 	return user, nil

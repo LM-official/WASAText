@@ -9,6 +9,9 @@ var (
 	// ErrUsernameTaken is returned when the username is already used by another user
 	ErrUsernameTaken = errors.New("username already taken")
 
+	// ErrUserNotFound is returned when no user owns the given id
+	ErrUserNotFound = errors.New("user not found")
+
 	// ErrChatNotFound is returned when no chat owns the given id, or it is not the kind of chat the caller asked for
 	// A private chat reached through a /groups/ route is not found: under that collection its id names nothing
 	ErrChatNotFound = errors.New("chat not found")
@@ -23,4 +26,7 @@ var (
 	// ErrChatFull is returned when the chat already holds schemas.ChatMaxMessages messages
 	// What was asked cannot fit, which is about the request and not about who is asking
 	ErrChatFull = errors.New("chat is full")
+
+	// ErrMessageNotFound is returned when no message owns the given id
+	ErrMessageNotFound = errors.New("message not found")
 )

@@ -961,8 +961,16 @@ paths:                                                # Rest endpoints
   /chats/{chatId}/messages/forwards:
     post:
       operationId: 'forwardMessage'
-      description: 'Forwards an existing message to the specified chat. The content (text/photo) is copied to a new message'
-      summary: 'Forwards a message'
+      description: |
+        Copies an existing message into a destination chat.
+        The authenticated user must be a member of both the source chat and the destination chat.
+        The source message is left untouched. The forwarded copy has a new id and date,
+        identifies the authenticated user as its sender, carries the source text and/or photo, and has no comments.
+        Forwarding catches the sender up with the destination chat, since writing in it means having seen what is above.
+        Its state is therefore computed like that of a newly sent message:
+        it is 'read' when no other destination member is behind it, and 'received' otherwise.
+        A destination chat holds up to 10000 messages, and one that is full is a bad request.
+      summary: 'Forward a message'
       tags: ['PrivateChat', 'Group']
       parameters:
         - $ref: '#/components/parameters/ParamChatId'
@@ -973,6 +981,7 @@ paths:                                                # Rest endpoints
             schema:
               description: 'Object containing the ID of the message to forward'
               type: object
+              additionalProperties: false
               properties:
                 messageId:
                   $ref: '#/components/schemas/MessageId'
@@ -993,13 +1002,13 @@ paths:                                                # Rest endpoints
                 user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                 state: 'received'
                 comments: []
-        '400':
-          $ref: '#/components/responses/BadRequest'
+        '400':                                        # Invalid destination id, invalid body/source id,
+          $ref: '#/components/responses/BadRequest'   # or a destination chat that is already full
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
+        '403':                                        # Not a member of the source or destination chat
           $ref: '#/components/responses/Forbidden'
-        '404':
+        '404':                                        # No source message or destination chat owns the given id
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
