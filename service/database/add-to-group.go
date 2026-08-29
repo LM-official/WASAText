@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/MercuriLorenzo/WASAText/service/globaltime"
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 )
 
@@ -50,17 +52,24 @@ func (db *appdbimpl) AddToGroup(userId schemas.UserId, groupId schemas.ChatId, u
 	// An empty list adds nobody, and the checks above already answered for the group:
 	// only the INSERT is skipped, the reply is still the group as it stands
 	if len(userIds) > 0 {
+		// A member joins caught up to now, and never behind the messages that were sent before it:
+		// a message every member had already read must not turn back to received because somebody joined,
+		// so the ones it was never sent are the ones it answers for none of
+		joinDate := globaltime.Now().UTC().Truncate(time.Millisecond).Format(dateFormat)
+
 		// One INSERT holding a tuple per member
 		// Every tuple is the same text so it is repeated, one less than the members: the first one is written here
-		placeholders := "(?, ?)" + strings.Repeat(", (?, ?)", len(userIds)-1)
-		args := make([]interface{}, 0, len(userIds)*2)
+		placeholders := "(?, ?, ?)" + strings.Repeat(", (?, ?, ?)", len(userIds)-1)
+		args := make([]interface{}, 0, len(userIds)*3)
 		for _, member := range userIds {
-			args = append(args, groupId, member)
+			args = append(args, groupId, member, joinDate)
 		}
 
 		// OR IGNORE drops the tuples of the members already inside, which the API asks to ignore
+		// It keeps the lastReadDate they already hold: re-adding a member is not a reason to mark
+		// as unread what it had read, and the request asks to ignore it and not to touch it
 		// It does not cover a foreign key, so an id that belongs to nobody still fails here
-		_, err = tx.Exec(`INSERT OR IGNORE INTO chat_members (chatId, userId) VALUES `+placeholders+`;`, args...)
+		_, err = tx.Exec(`INSERT OR IGNORE INTO chat_members (chatId, userId, lastReadDate) VALUES `+placeholders+`;`, args...)
 		if err != nil {
 			// Error inserting the members
 			return schemas.ChatWithMembers{}, fmt.Errorf("cannot add the members to the group: %w", err)

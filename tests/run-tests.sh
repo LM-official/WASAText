@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# tests/endpoints.md, sections 0-14, for the endpoints registered in api-handler.go
+# tests/endpoints.md, sections 0-15, for the endpoints registered in api-handler.go
 cd /Users/lorenzo/WASAText
 H=localhost:3000
-R=$(date +%s)
 PASS=0; FAIL=0; FAILED=()
 
 id() { sed 's/.*"id":"\([^"]*\)".*/\1/'; }
@@ -21,10 +20,14 @@ PNG=db/photos/00000000-0000-4000-8000-000000000000
 printf 'not an image' > /tmp/text.txt
 : > /tmp/empty.png
 
-A=$(body POST /session -H 'Content-Type: application/json' -d "{\"username\":\"alice$R\"}" | id)
-B=$(body POST /session -H 'Content-Type: application/json' -d "{\"username\":\"bob$R\"}" | id)
-C=$(body POST /session -H 'Content-Type: application/json' -d "{\"username\":\"carl$R\"}" | id)
-D=$(body POST /session -H 'Content-Type: application/json' -d "{\"username\":\"dave$R\"}" | id)
+# Empty the database and rebuild the cast, so every run starts from the same rows and a fixture
+# is just a name: nothing below depends on what a previous run happened to leave behind
+bash tests/seed.sh || { echo "seed failed"; exit 1; }
+
+A=$(body POST /session -H 'Content-Type: application/json' -d "{\"username\":\"alice\"}" | id)
+B=$(body POST /session -H 'Content-Type: application/json' -d "{\"username\":\"bob\"}" | id)
+C=$(body POST /session -H 'Content-Type: application/json' -d "{\"username\":\"carl\"}" | id)
+D=$(body POST /session -H 'Content-Type: application/json' -d "{\"username\":\"dave\"}" | id)
 AU="Authorization: Bearer $A"; BU="Authorization: Bearer $B"
 CU="Authorization: Bearer $C"; DU="Authorization: Bearer $D"
 JS='Content-Type: application/json'; MP='Content-Type: application/merge-patch+json'
@@ -41,50 +44,50 @@ eq "0 unknown token"    401 "$(code GET /users?username=alice -H 'Authorization:
 has "0 unknown body"    '"message":"unknown token"' "$(body GET /users?username=alice -H 'Authorization: Bearer 11111111-2222-4333-8444-555555555555')"
 
 echo "### 1. doLogin"
-eq "1 register"      201 "$(code POST /session -H "$JS" -d "{\"username\":\"new$R\"}")"
-eq "1 login again"   200 "$(code POST /session -H "$JS" -d "{\"username\":\"new$R\"}")"
-eq "1 same id"       "$(body POST /session -H "$JS" -d "{\"username\":\"new$R\"}" | id)" "$(body POST /session -H "$JS" -d "{\"username\":\"new$R\"}" | id)"
+eq "1 register"      201 "$(code POST /session -H "$JS" -d "{\"username\":\"new\"}")"
+eq "1 login again"   200 "$(code POST /session -H "$JS" -d "{\"username\":\"new\"}")"
+eq "1 same id"       "$(body POST /session -H "$JS" -d "{\"username\":\"new\"}" | id)" "$(body POST /session -H "$JS" -d "{\"username\":\"new\"}" | id)"
 eq "1 typo field"    400 "$(code POST /session -H "$JS" -d '{"usernam":"carl"}')"
 eq "1 empty string"  400 "$(code POST /session -H "$JS" -d '{"username":""}')"
 eq "1 empty object"  400 "$(code POST /session -H "$JS" -d '{}')"
 eq "1 null"          400 "$(code POST /session -H "$JS" -d '{"username":null}')"
 eq "1 space"         400 "$(code POST /session -H "$JS" -d '{"username":"a b"}')"
 eq "1 accent"        400 "$(code POST /session -H "$JS" -d '{"username":"cà rl"}')"
-N30="$(printf 'x%.0s' $(seq $((30 - ${#R}))))$R"
-N31="$(printf 'y%.0s' $(seq $((31 - ${#R}))))$R"
+N30="$(printf 'x%.0s' $(seq 30))"
+N31="$(printf 'y%.0s' $(seq 31))"
 P30="{\"username\":\"$N30\"}"; P31="{\"username\":\"$N31\"}"
 eq "1 30 chars ($(printf %s "$N30" | wc -c | tr -d ' ') chars)" 201 "$(code POST /session -H "$JS" -d "$P30")"
 eq "1 31 chars ($(printf %s "$N31" | wc -c | tr -d ' ') chars)" 400 "$(code POST /session -H "$JS" -d "$P31")"
 eq "1 truncated"     400 "$(code POST /session -H "$JS" -d '{"username":')"
 eq "1 empty body"    400 "$(code POST /session -H "$JS" -d '')"
-PUNK="{\"username\":\"new$R\",\"admin\":true}"
+PUNK="{\"username\":\"new\",\"admin\":true}"
 eq "1 unknown field" 200 "$(code POST /session -H "$JS" -d "$PUNK")"
 
 echo "### 2. setMyUserName"
-eq "2 free username" 200 "$(code PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"alice_new$R\"}")"
-has "2 body" "\"id\":\"$A\",\"username\":\"alice_new$R\",\"photo\":\"/photos/00000000-0000-4000-8000-000000000000\"" \
-     "$(body PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"alice_new$R\"}")"
-eq "2 idempotent"    200 "$(code PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"alice_new$R\"}")"
-eq "2 taken"         400 "$(code PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"bob$R\"}")"
-has "2 taken body"   '"message":"username already taken"' "$(body PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"bob$R\"}")"
+eq "2 free username" 200 "$(code PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"alice_new\"}")"
+has "2 body" "\"id\":\"$A\",\"username\":\"alice_new\",\"photo\":\"/photos/00000000-0000-4000-8000-000000000000\"" \
+     "$(body PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"alice_new\"}")"
+eq "2 idempotent"    200 "$(code PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"alice_new\"}")"
+eq "2 taken"         400 "$(code PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"bob\"}")"
+has "2 taken body"   '"message":"username already taken"' "$(body PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"bob\"}")"
 eq "2 invalid"       400 "$(code PATCH /me/username -H "$AU" -H "$MP" -d '{"username":"a b"}')"
-eq "2 plain json ct" 200 "$(code PATCH /me/username -H "$AU" -H "$JS" -d "{\"username\":\"alice_new$R\"}")"
+eq "2 plain json ct" 200 "$(code PATCH /me/username -H "$AU" -H "$JS" -d "{\"username\":\"alice_new\"}")"
 eq "2 no token"      401 "$(code PATCH /me/username -H "$MP" -d '{"username":"x"}')"
 
 echo "### 3. getUsers"
-eq "3 match"      200 "$(code GET "/users?username=alice_new$R" -H "$AU")"
-eq "3 no match"   404 "$(code GET "/users?username=zzzznope$R" -H "$AU")"
-has "3 404 body"  '"message":"no user matches the given username"' "$(body GET "/users?username=zzzznope$R" -H "$AU")"
+eq "3 match"      200 "$(code GET "/users?username=alice_new" -H "$AU")"
+eq "3 no match"   404 "$(code GET "/users?username=zzzznope" -H "$AU")"
+has "3 404 body"  '"message":"no user matches the given username"' "$(body GET "/users?username=zzzznope" -H "$AU")"
 eq "3 empty param" 400 "$(code GET "/users?username=" -H "$AU")"
 eq "3 no param"   400 "$(code GET "/users" -H "$AU")"
 eq "3 bad chars"  400 "$(code GET "/users?username=a%20b" -H "$AU")"
-body POST /session -H "$JS" -d "{\"username\":\"a_b$R\"}" > /dev/null
-body POST /session -H "$JS" -d "{\"username\":\"axb$R\"}" > /dev/null
-LIKE=$(body GET "/users?username=a_b$R" -H "$AU")
-has   "3 LIKE escape keeps a_b"  "a_b$R" "$LIKE"
-hasnt "3 LIKE escape drops axb"  "axb$R" "$LIKE"
-for i in $(seq 1 25); do body POST /session -H "$JS" -d "{\"username\":\"lim${R}_$i\"}" > /dev/null; done
-eq "3 LIMIT 20" 20 "$(body GET "/users?username=lim$R" -H "$AU" | grep -o '"id"' | wc -l | tr -d ' ')"
+# a_b and axb come from the seed: '_' is a LIKE wildcard and a legal username character,
+# so an unescaped prefix of a_b would find axb too
+LIKE=$(body GET "/users?username=a_b" -H "$AU")
+has   "3 LIKE escape keeps a_b"  '"username":"a_b"' "$LIKE"
+hasnt "3 LIKE escape drops axb"  '"username":"axb"' "$LIKE"
+# the 99 fill users of the seed all match this prefix, and the query answers 20 of them
+eq "3 LIMIT 20" 20 "$(body GET "/users?username=fill" -H "$AU" | grep -o '"id"' | wc -l | tr -d ' ')"
 
 echo "### 4. setMyPhoto"
 BEFORE=$(ls db/photos | wc -l | tr -d ' ')
@@ -143,31 +146,31 @@ eq "6 empty body"  400 "$(code POST /private-chats -H "$AU" -H "$JS" -d '{}')"
 
 echo "### 7. createGroup"
 GBEFORE=$(ls db/photos | wc -l | tr -d ' ')
-DOK="data={\"name\":\"Study $R\",\"members\":[\"$B\"]};type=application/json"
-DLEAVE="data={\"name\":\"Leave $R\",\"members\":[\"$B\",\"$C\"]};type=application/json"
-DDROP="data={\"name\":\"Drop $R\",\"members\":[\"$B\"]};type=application/json"
-DME="data={\"name\":\"X $R\",\"members\":[\"$A\"]};type=application/json"
-DUNK="data={\"name\":\"X $R\",\"members\":[\"11111111-2222-4333-8444-555555555555\"]};type=application/json"
-DNOPHOTO="data={\"name\":\"X $R\",\"members\":[\"$B\"]};type=application/json"
+DOK="data={\"name\":\"Study \",\"members\":[\"$B\"]};type=application/json"
+DLEAVE="data={\"name\":\"Leave \",\"members\":[\"$B\",\"$C\"]};type=application/json"
+DDROP="data={\"name\":\"Drop \",\"members\":[\"$B\"]};type=application/json"
+DME="data={\"name\":\"X \",\"members\":[\"$A\"]};type=application/json"
+DUNK="data={\"name\":\"X \",\"members\":[\"11111111-2222-4333-8444-555555555555\"]};type=application/json"
+DNOPHOTO="data={\"name\":\"X \",\"members\":[\"$B\"]};type=application/json"
 eq "7 valid" 201 "$(code POST /groups -H "$AU" -F "$DOK" -F "photoFile=@$PNG")"
-G1=$(body POST /groups -H "$AU" -F "data={\"name\":\"Study $R\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
-G2=$(body POST /groups -H "$AU" -F "data={\"name\":\"Study $R\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+G1=$(body POST /groups -H "$AU" -F "data={\"name\":\"Study \",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+G2=$(body POST /groups -H "$AU" -F "data={\"name\":\"Study \",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
 if [ "$G1" != "$G2" ]; then ok; else no "7 same people many groups" "$G1 == $G2"; fi
 eq "7 creator inside" 400 "$(code POST /groups -H "$AU" -F "$DME" -F "photoFile=@$PNG")"
 has "7 creator body" '"message":"the creator is already a member of the group"' "$(body POST /groups -H "$AU" -F "$DME" -F "photoFile=@$PNG")"
 eq "7 unknown member" 404 "$(code POST /groups -H "$AU" -F "$DUNK" -F "photoFile=@$PNG")"
 has "7 unknown member body" '"message":"one or more of the members does not exist"' "$(body POST /groups -H "$AU" -F "$DUNK" -F "photoFile=@$PNG")"
-eq "7 empty members" 400 "$(code POST /groups -H "$AU" -F "data={\"name\":\"X $R\",\"members\":[]};type=application/json" -F "photoFile=@$PNG")"
-eq "7 duplicates"    400 "$(code POST /groups -H "$AU" -F "data={\"name\":\"X $R\",\"members\":[\"$B\",\"$B\"]};type=application/json" -F "photoFile=@$PNG")"
+eq "7 empty members" 400 "$(code POST /groups -H "$AU" -F "data={\"name\":\"X \",\"members\":[]};type=application/json" -F "photoFile=@$PNG")"
+eq "7 duplicates"    400 "$(code POST /groups -H "$AU" -F "data={\"name\":\"X \",\"members\":[\"$B\",\"$B\"]};type=application/json" -F "photoFile=@$PNG")"
 eq "7 empty name"    400 "$(code POST /groups -H "$AU" -F "data={\"name\":\"\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG")"
 eq "7 no data part"  400 "$(code POST /groups -H "$AU" -F "photoFile=@$PNG")"
 eq "7 no photo part" 400 "$(code POST /groups -H "$AU" -F "$DNOPHOTO")"
 has "7 no photo body" '"message":"missing photoFile field"' "$(body POST /groups -H "$AU" -F "$DNOPHOTO")"
-eq "7 bad photo"     400 "$(code POST /groups -H "$AU" -F "data={\"name\":\"X $R\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@/tmp/text.txt")"
+eq "7 bad photo"     400 "$(code POST /groups -H "$AU" -F "data={\"name\":\"X \",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@/tmp/text.txt")"
 eq "7 no token"      401 "$(code POST /groups -F "data={\"name\":\"X\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG")"
 
 echo "### 8. setGroupName  (reply: GroupChat)"
-G=$(body POST /groups -H "$AU" -F "data={\"name\":\"Study $R\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+G=$(body POST /groups -H "$AU" -F "data={\"name\":\"Study \",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
 GPHOTO=$(sqlite3 db/wasatext.db "SELECT photoId FROM chats WHERE id='$G';")
 NB=$(body PATCH /groups/$G/name -H "$AU" -H "$MP" -d '{"name":"CS Study Group"}')
 eq  "8 member renames"   200 "$(code PATCH /groups/$G/name -H "$AU" -H "$MP" -d '{"name":"CS Study Group"}')"
@@ -245,8 +248,10 @@ eq  "10 bad group id"     400 "$(code POST /groups/not-a-uuid/members -H "$AU" -
 eq  "10 GET on path"      405 "$(code GET /groups/$G/members -H "$AU")"
 eq  "10 no token"         401 "$(code POST /groups/$G/members -H "$JS" -d '{"members":[]}')"
 # the cap: fill a fresh group past 100
-GF=$(body POST /groups -H "$AU" -F "data={\"name\":\"Full $R\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
-FILL=""; for i in $(seq 1 99); do U=$(body POST /session -H "$JS" -d "{\"username\":\"f${R}_$i\"}" | id); FILL="$FILL\"$U\","; done
+GF=$(body POST /groups -H "$AU" -F "data={\"name\":\"Full \",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+# the 99 fill users of the seed: addToGroup checks UsersExist before it counts, so they must be real
+# doLogin is idempotent, so this reads their ids and writes nobody
+FILL=""; for i in $(seq -w 1 99); do U=$(body POST /session -H "$JS" -d "{\"username\":\"fill$i\"}" | id); FILL="$FILL\"$U\","; done
 eq "10 group full"    400 "$(code POST /groups/$GF/members -H "$AU" -H "$JS" -d "{\"members\":[${FILL%,}]}")"
 has "10 group full body" '"message":"the group is full"' "$(body POST /groups/$GF/members -H "$AU" -H "$JS" -d "{\"members\":[${FILL%,}]}")"
 eq "10 rollback whole" 2 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chat_members WHERE chatId='$GF';")"
@@ -282,45 +287,55 @@ eq  "11 gone is 404"   404 "$(code DELETE /groups/$GD/members/me -H "$AU")"
 eq  "11 no stranded chat" 0 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chats c WHERE NOT EXISTS (SELECT 1 FROM chat_members WHERE chatId=c.id);")"
 
 echo "### 12. getMyConversations  (reply: GroupSummary | PrivateChatSummary, with the snippet)"
-GS=$(body POST /groups -H "$AU" -F "data={\"name\":\"Silent $R\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+GS=$(body POST /groups -H "$AU" -F "data={\"name\":\"Silent \",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
 CL=$(body GET /me/chats -H "$AU")
 eq  "12 list"          200 "$(code GET /me/chats -H "$AU")"
 has "12 has chats"     '"chats":[' "$CL"
 has "12 has chatType"  '"chatType":' "$CL"
-has "12 silent group has no snippet" "\"id\":\"$GS\",\"chatType\":\"group\",\"name\":\"Silent $R\"" "$CL"
-NEW=$(body POST /session -H "$JS" -d "{\"username\":\"lonely$R\"}" | id)
+has "12 silent group has no snippet" "\"id\":\"$GS\",\"chatType\":\"group\",\"name\":\"Silent \"" "$CL"
+NEW=$(body POST /session -H "$JS" -d "{\"username\":\"lonely\"}" | id)
 eq  "12 no chats"      404 "$(code GET /me/chats -H "Authorization: Bearer $NEW")"
 has "12 404 body"      '"message":"no conversations found"' "$(body GET /me/chats -H "Authorization: Bearer $NEW")"
 eq  "12 POST on path"  405 "$(code POST /me/chats -H "$AU")"
 eq  "12 trailing slash" 404 "$(code GET /me/chats/ -H "$AU")"
 eq  "12 no token"      401 "$(code GET /me/chats)"
 # the borrow is live, and a group is never multiplied
-has "12 private chat named after the other" "alice_new$R" "$(body GET /me/chats -H "$BU")"
-body PATCH /me/username -H "$BU" -H "$MP" -d "{\"username\":\"bob_renamed$R\"}" > /dev/null
-has "12 rename reaches the other list" "bob_renamed$R" "$(body GET /me/chats -H "$AU")"
+has "12 private chat named after the other" "alice_new" "$(body GET /me/chats -H "$BU")"
+body PATCH /me/username -H "$BU" -H "$MP" -d "{\"username\":\"bob_renamed\"}" > /dev/null
+has "12 rename reaches the other list" "bob_renamed" "$(body GET /me/chats -H "$AU")"
 eq  "12 group appears once" 1 "$(body GET /me/chats -H "$AU" | grep -o "\"id\":\"$G\"" | wc -l | tr -d ' ')"
-# the snippet, written by hand: sendMessage does not exist yet
-MSGIDS="'11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','33333333-3333-4333-8333-333333333333','44444444-4444-4444-8444-444444444444'"
-sqlite3 db/wasatext.db "DELETE FROM messages WHERE id IN ($MSGIDS);"
+# the snippet: the messages are the ones sendMessage writes (§14), not rows put in by hand
 LONGTEXT=$(printf 'abcdefghij%.0s' $(seq 1 12))
-sqlite3 db/wasatext.db "INSERT INTO messages (id,chatId,userId,text,photoId,date) VALUES
- ('11111111-1111-4111-8111-111111111111','$G','$B','$LONGTEXT',NULL,'2026-08-24T10:00:00Z'),
- ('22222222-2222-4222-8222-222222222222','$P','$B',NULL,'$DEF','2026-08-24T11:00:00Z');"
+body POST /chats/$G/messages -H "$BU" -F "text=$LONGTEXT" > /dev/null
+body POST /chats/$P/messages -H "$BU" -F "photoFile=@$PNG" > /dev/null
 SN=$(body GET /me/chats -H "$AU")
 CUT50=$(printf 'abcdefghij%.0s' $(seq 1 5))
 has "12 text snippet truncated to 50" "\"text\":\"$CUT50\"" "$SN"
 has "12 photo snippet emoji" '"emoji":"📷"' "$SN"
 has "12 snippet state received" '"state":"received"' "$SN"
-sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2026-08-24T12:00:00Z' WHERE chatId='$G' AND userId='$A';"
-has "12 still received, C has not opened" '"state":"received"' "$(body GET /me/chats -H "$AU")"
-sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2026-08-24T12:00:00Z' WHERE chatId='$G' AND userId='$C';"
-has "12 read once every other member opened" '"state":"read"' "$(body GET /me/chats -H "$AU")"
-# ordering: newest first, silent chat last
+# the state moves as the members see the chat, and reads the same for everybody
+# every read answers with the states taken before it marks the chat, so each call shows what was
+# true when it was asked: B is caught up by having sent, and A and C by opening
+has "12 received while C has not opened" '"state":"received"' "$(body GET /chats/$G -H "$AU")"
+body GET /chats/$G -H "$CU" > /dev/null
+has "12 read once every member has seen it" '"state":"read"' "$(body GET /chats/$G -H "$AU")"
+has "12 the snippet carries that state too" '"state":"read"' "$(body GET /me/chats -H "$AU")"
+# a message holding an empty text and no photo: sendMessage answers 400 to it, so the row can only be
+# written here, and it is what keeps the guard that drops a snippet with nothing to show covered
+GE=$(body POST /groups -H "$AU" -F "data={\"name\":\"Empty\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
 sqlite3 db/wasatext.db "INSERT INTO messages (id,chatId,userId,text,photoId,date) VALUES
- ('33333333-3333-4333-8333-333333333333','$P','$B','FIRST in that second',NULL,'2026-08-24T15:00:00Z'),
- ('44444444-4444-4444-8444-444444444444','$P','$B','SECOND in that second',NULL,'2026-08-24T15:00:00Z');"
+ ('55555555-5555-4555-8555-555555555555','$GE','$B','',NULL,'2099-01-01T00:00:00.000Z');"
+EM=$(body GET /me/chats -H "$AU")
+has   "12 a chat whose last message shows nothing is still listed" "\"id\":\"$GE\"" "$EM"
+hasnt "12 and carries an empty content instead of a snippet" '"content":{}' "$EM"
+# ordering: newest first, silent chat last
+# written by hand and not sent so the two messages deterministically share the same millisecond.
+# Dated ahead of every sent message so they stay the newest of P
+sqlite3 db/wasatext.db "INSERT INTO messages (id,chatId,userId,text,photoId,date) VALUES
+ ('33333333-3333-4333-8333-333333333333','$P','$B','FIRST in that millisecond',NULL,'2099-01-01T00:00:00.000Z'),
+ ('44444444-4444-4444-8444-444444444444','$P','$B','SECOND in that millisecond',NULL,'2099-01-01T00:00:00.000Z');"
 ORD=$(body GET /me/chats -H "$AU")
-has "12 rowid breaks the tie" 'SECOND in that second' "$ORD"
+has "12 rowid breaks the tie" 'SECOND in that millisecond' "$ORD"
 POS() { echo "$ORD" | grep -o '"id":"[0-9a-f-]*"' | grep -n "$1" | head -1 | cut -d: -f1; }
 PG=$(POS "$G"); PP=$(POS "$P"); PS=$(POS "$GS")
 if [ -n "$PG" ] && [ -n "$PP" ] && [ -n "$PS" ] && [ "$PS" -gt "$PG" ] && [ "$PS" -gt "$PP" ]; then ok
@@ -341,13 +356,13 @@ eq  "13 group holds three members" 3 "$(echo "$GC" | grep -o '"members":\[[^]]*\
 PC=$(body GET /chats/$P -H "$AU")
 eq  "13 private 200"      200 "$(code GET /chats/$P -H "$AU")"
 has "13 private chatType" '"chatType":"private"' "$PC"
-has "13 private named after the other" "\"name\":\"bob_renamed$R\"" "$PC"
-has "13 private name flips" "\"name\":\"alice_new$R\"" "$(body GET /chats/$P -H "$BU")"
+has "13 private named after the other" "\"name\":\"bob_renamed\"" "$PC"
+has "13 private name flips" "\"name\":\"alice_new\"" "$(body GET /chats/$P -H "$BU")"
 eq  "13 private holds two members" 2 "$(echo "$PC" | grep -o '"members":\[[^]]*\]' | grep -o '[0-9a-f-]\{36\}' | wc -l | tr -d ' ')"
-# newest first, rowid breaking the tie inside the same second, exactly as the snippet of section 12
-eq  "13 messages newest first" "SECOND in that second FIRST in that second " "$(echo "$PC" | grep -o 'SECOND in that second\|FIRST in that second' | tr '\n' ' ')"
-has "13 text only message"  '"content":{"text":"SECOND in that second"}' "$PC"
-has "13 photo only message" "\"content\":{\"photo\":\"/photos/$DEF\"}" "$PC"
+# newest first, rowid breaking the tie inside the same millisecond, exactly as the snippet of section 12
+eq  "13 messages newest first" "SECOND in that millisecond FIRST in that millisecond " "$(echo "$PC" | grep -o 'SECOND in that millisecond\|FIRST in that millisecond' | tr '\n' ' ')"
+has "13 text only message"  '"content":{"text":"SECOND in that millisecond"}' "$PC"
+has "13 photo only message" '"content":{"photo":"/photos/' "$PC"
 hasnt "13 no bare prefix on a message without a photo" '"photo":"/photos/"' "$PC"
 has "13 the opened chat carries the whole text, where the snippet cuts it" "\"text\":\"$LONGTEXT\"" "$GC"
 # the comments, written by hand: commentMessage does not exist yet
@@ -357,7 +372,7 @@ sqlite3 db/wasatext.db "INSERT INTO comments (id,messageId,userId,emoji) VALUES
  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','44444444-4444-4444-8444-444444444444','$A','👍'),
  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','33333333-3333-4333-8333-333333333333','$A','😂');"
 PC2=$(body GET /chats/$P -H "$AU")
-has "13 a comment lands on its own message" '"content":{"text":"SECOND in that second"},"comments":[{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"' "$PC2"
+has "13 a comment lands on its own message" '"content":{"text":"SECOND in that millisecond"},"comments":[{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"' "$PC2"
 has "13 no comment is an empty list and never null" '"comments":[]' "$PC2"
 # the state is the one of section 12: computed from lastReadDate, the same value for every member
 has "13 read on the group"           '"state":"read"' "$GC"
@@ -367,12 +382,12 @@ has "13 a chat with no message answers an empty list" '"messages":[]' "$(body GE
 eq  "13 private chat id under /groups/" 404 "$(code PATCH /groups/$P/name -H "$AU" -H "$MP" -d '{"name":"x"}')"
 eq  "13 private chat id under /chats/"  200 "$(code GET /chats/$P -H "$AU")"
 # one page: a chat answers at most schemas.ChatMessagesPageSize messages, whatever it holds
-GP=$(body POST /groups -H "$AU" -F "data={\"name\":\"Page $R\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+GP=$(body POST /groups -H "$AU" -F "data={\"name\":\"Page \",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
 sqlite3 db/wasatext.db "DELETE FROM messages WHERE id LIKE 'page____-0000-4000-8000-000000000000';"
 sqlite3 db/wasatext.db "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < 501)
  INSERT INTO messages (id,chatId,userId,text,photoId,date)
  SELECT printf('page%04d-0000-4000-8000-000000000000', i), '$GP', '$A', 'm'||i, NULL,
-        strftime('%Y-%m-%dT%H:%M:%SZ', datetime('2026-08-24T00:00:00Z', '+'||i||' seconds')) FROM n;"
+        strftime('%Y-%m-%dT%H:%M:%fZ', datetime('2026-08-24T00:00:00Z', '+'||i||' seconds')) FROM n;"
 eq  "13 501 messages answer one page of 500" 500 "$(body GET /chats/$GP -H "$AU" | grep -o '"state":"' | wc -l | tr -d ' ')"
 eq  "13 not a member"     403 "$(code GET /chats/$G -H "$DU")"
 has "13 403 body"         '"message":"not a member of the chat"' "$(body GET /chats/$G -H "$DU")"
@@ -384,24 +399,139 @@ eq  "13 uppercase uuid"   400 "$(code GET /chats/$(echo $G | tr a-f A-F) -H "$AU
 eq  "13 POST on path"     405 "$(code POST /chats/$G -H "$AU")"
 eq  "13 trailing slash"   404 "$(code GET /chats/$G/ -H "$AU")"
 eq  "13 no token"         401 "$(code GET /chats/$G)"
-# nothing is written: this is a read, and opening a chat does not mark it read either
+# no row is added or removed: the one thing this read writes is the lastReadDate of its caller
 CNT() { sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM chats)||'/'||(SELECT COUNT(*) FROM chat_members)||'/'||(SELECT COUNT(*) FROM messages)||'/'||(SELECT COUNT(*) FROM comments);"; }
-LRD() { sqlite3 db/wasatext.db "SELECT quote(lastReadDate) FROM chat_members WHERE chatId='$P' AND userId='$A';"; }
-BEF13=$(CNT); LR13=$(LRD)
+LRD() { sqlite3 db/wasatext.db "SELECT lastReadDate FROM chat_members WHERE chatId='$P' AND userId='$A';"; }
+OTH() { sqlite3 db/wasatext.db "SELECT lastReadDate FROM chat_members WHERE chatId='$P' AND userId='$B';"; }
+BEF13=$(CNT); LR13=$(LRD); OT13=$(OTH)
 body GET /chats/$G -H "$AU" > /dev/null; body GET /chats/$P -H "$AU" > /dev/null
-eq  "13 nothing is written" "$BEF13" "$(CNT)"
-eq  "13 opening a chat leaves lastReadDate untouched" "$LR13" "$(LRD)"
+eq  "13 no row is written" "$BEF13" "$(CNT)"
+# opening a chat is what marks it read, and it marks it for the caller alone
+if [ "$(LRD)" \> "$LR13" ]; then ok; else no "13 opening a chat marks it read for the caller" "$LR13 -> $(LRD)"; fi
+eq  "13 and leaves every other member alone" "$OT13" "$(OTH)"
+# a caller that is refused writes nothing at all
+LRD_D() { sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chat_members WHERE chatId='$G' AND userId='$D';"; }
+body GET /chats/$G -H "$DU" > /dev/null
+eq  "13 a 403 marks nothing" 0 "$(LRD_D)"
 
-echo "### 14. router level"
-eq "14 unknown path"   404 "$(code GET /nope)"
-eq "14 wrong method"   405 "$(code GET /session)"
-eq "14 trailing slash" 404 "$(code GET /users/ -H "$AU")"
+echo "### 14. sendMessage  (reply: Message, 201)"
+SM=$(body POST /chats/$G/messages -H "$AU" -F "text=hello everybody")
+eq  "14 text only"        201 "$(code POST /chats/$G/messages -H "$AU" -F 'text=another one')"
+has "14 reply is a Message" '"content":{"text":"hello everybody"}' "$SM"
+has "14 born with no reaction" '"comments":[]' "$SM"
+has "14 carries its own date" '"date":"20' "$SM"
+eq  "14 photo only"       201 "$(code POST /chats/$G/messages -H "$AU" -F "photoFile=@$PNG")"
+BOTH=$(body POST /chats/$G/messages -H "$AU" -F "text=look at this" -F "photoFile=@$PNG")
+has "14 text and photo together" '"text":"look at this"' "$BOTH"
+has "14 the photo is a URL and never an id" '"photo":"/photos/' "$BOTH"
+eq  "14 a private chat takes one too" 201 "$(code POST /chats/$P/messages -H "$AU" -F 'text=hi bob')"
+# what a message may not be
+eq  "14 neither text nor photo" 400 "$(code POST /chats/$G/messages -H "$AU" -F 'x=1')"
+has "14 400 body"        '"message":"empty message content: text or photo is required"' "$(body POST /chats/$G/messages -H "$AU" -F 'x=1')"
+eq  "14 spaces alone"    400 "$(code POST /chats/$G/messages -H "$AU" -F 'text=   ')"
+eq  "14 empty text"      400 "$(code POST /chats/$G/messages -H "$AU" -F 'text=')"
+T5000=$(printf 'z%.0s' $(seq 5000)); T5001=$(printf 'z%.0s' $(seq 5001))
+eq  "14 5000 chars"      201 "$(code POST /chats/$G/messages -H "$AU" -F "text=$T5000")"
+eq  "14 5001 chars"      400 "$(code POST /chats/$G/messages -H "$AU" -F "text=$T5001")"
+has "14 too long body"   '"message":"invalid message text"' "$(body POST /chats/$G/messages -H "$AU" -F "text=$T5001")"
+# one grapheme cluster is one char, as everywhere else
+eq  "14 an emoji counts one" 201 "$(code POST /chats/$G/messages -H "$AU" -F "text=$(printf '\U0001f468‍\U0001f469‍\U0001f467‍\U0001f466%.0s' $(seq 1 100))")"
+# the photo, refused exactly as section 4 refuses it
+eq  "14 not an image"    400 "$(code POST /chats/$G/messages -H "$AU" -F 'photoFile=@/tmp/text.txt')"
+has "14 not an image body" '"message":"invalid photo"' "$(body POST /chats/$G/messages -H "$AU" -F 'photoFile=@/tmp/text.txt')"
+eq  "14 empty photo"     400 "$(code POST /chats/$G/messages -H "$AU" -F 'photoFile=@/tmp/empty.png')"
+eq  "14 over MaxPhotoBytes" 400 "$(code POST /chats/$G/messages -H "$AU" -F 'photoFile=@/tmp/big.png')"
+eq  "14 over the body limit" 400 "$(code POST /chats/$G/messages -H "$AU" -F 'photoFile=@/tmp/huge.png')"
+eq  "14 not multipart"   400 "$(code POST /chats/$G/messages -H "$AU" -H "$JS" -d '{"text":"x"}')"
+# a file part under another name is no photo at all, so the text alone decides
+eq  "14 wrong field with a text"    201 "$(code POST /chats/$G/messages -H "$AU" -F 'text=ok' -F "file=@$PNG")"
+eq  "14 wrong field without a text" 400 "$(code POST /chats/$G/messages -H "$AU" -F "file=@$PNG")"
+# who may write, and where
+eq  "14 not a member"    403 "$(code POST /chats/$G/messages -H "$DU" -F 'text=x')"
+has "14 403 body"        '"message":"not a member of the chat"' "$(body POST /chats/$G/messages -H "$DU" -F 'text=x')"
+eq  "14 unknown chat"    404 "$(code POST /chats/11111111-2222-4333-8444-555555555555/messages -H "$AU" -F 'text=x')"
+has "14 404 body"        '"message":"chat not found"' "$(body POST /chats/11111111-2222-4333-8444-555555555555/messages -H "$AU" -F 'text=x')"
+eq  "14 bad chat id"     400 "$(code POST /chats/not-a-uuid/messages -H "$AU" -F 'text=x')"
+has "14 bad id body"     '"message":"invalid chat id"' "$(body POST /chats/not-a-uuid/messages -H "$AU" -F 'text=x')"
+eq  "14 uppercase uuid"  400 "$(code POST /chats/$(echo $G | tr a-f A-F)/messages -H "$AU" -F 'text=x')"
+eq  "14 GET on the path" 405 "$(code GET /chats/$G/messages -H "$AU")"
+eq  "14 trailing slash"  404 "$(code POST /chats/$G/messages/ -H "$AU" -F 'text=x')"
+eq  "14 no token"        401 "$(code POST /chats/$G/messages -F 'text=x')"
+# nothing is left behind by a refusal, whatever the reason and however late it fires
+PB=$(ls db/photos | wc -l | tr -d ' ')
+code POST /chats/$G/messages -H "$DU" -F "photoFile=@$PNG" > /dev/null
+code POST /chats/11111111-2222-4333-8444-555555555555/messages -H "$AU" -F "photoFile=@$PNG" > /dev/null
+code POST /chats/$G/messages -H "$AU" -F 'photoFile=@/tmp/text.txt' > /dev/null
+eq  "14 a refused send leaks no photo" "$PB" "$(ls db/photos | wc -l | tr -d ' ')"
+eq  "14 every stored photo is on disk" 0 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE photoId IS NOT NULL AND photoId NOT IN ($(ls db/photos | sed "s/.*/'&'/" | paste -sd, -));")"
+# the sender is caught up to its own message, which is what keeps it from answering for it
+GX=$(body POST /groups -H "$AU" -F "data={\"name\":\"Stamp\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+MD=$(body POST /chats/$GX/messages -H "$AU" -F 'text=stamp' | sed 's/.*"date":"\([^"]*\)".*/\1/')
+# Plain time.Time keeps the same instant; JSON may trim trailing zeroes from the fixed-width DB value
+eq  "14 the reply date is the stored instant" 1 \
+    "$(sqlite3 db/wasatext.db "SELECT julianday('$MD') = julianday((SELECT date FROM messages WHERE chatId='$GX' ORDER BY rowid DESC LIMIT 1));")"
+eq  "14 and it is a valid date" 1 "$(sqlite3 db/wasatext.db "SELECT julianday('$MD') IS NOT NULL;")"
+# read before the chat is opened below: opening it moves the caller lastReadDate forward
+eq  "14 the sender lastReadDate is the date of its message" \
+    "$(sqlite3 db/wasatext.db "SELECT date FROM messages WHERE chatId='$GX' ORDER BY rowid DESC LIMIT 1;")" \
+    "$(sqlite3 db/wasatext.db "SELECT lastReadDate FROM chat_members WHERE chatId='$GX' AND userId='$A';")"
+eq  "14 the same date comes back from getConversation" "$MD" \
+    "$(body GET /chats/$GX -H "$AU" | sed 's/.*"date":"\([^"]*\)".*/\1/')"
+# the state of a new message is computed and not assumed
+has "14 received while somebody else is behind" '"state":"received"' "$(body POST /chats/$GX/messages -H "$AU" -F 'text=still received')"
+# e.g.1 a chat the sender is alone in: there is nobody to be behind, so the message is born read
+G1=$(body POST /groups -H "$AU" -F "data={\"name\":\"Solo\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+code DELETE /groups/$G1/members/me -H "$BU" > /dev/null
+has "14 e.g.1 alone in the chat, born read" '"state":"read"' "$(body POST /chats/$G1/messages -H "$AU" -F 'text=alone')"
+# e.g.2 the member that never opened it leaves, and the message it was holding becomes read
+G2=$(body POST /groups -H "$AU" -F "data={\"name\":\"Three\",\"members\":[\"$B\",\"$C\"]};type=application/json" -F "photoFile=@$PNG" | id)
+body POST /chats/$G2/messages -H "$AU" -F 'text=hi all' > /dev/null
+body GET /chats/$G2 -H "$BU" > /dev/null
+has "14 e.g.2 received while C has not opened" '"state":"received"' "$(body GET /chats/$G2 -H "$AU")"
+code DELETE /groups/$G2/members/me -H "$CU" > /dev/null
+has "14 e.g.2 read once the one behind it leaves" '"state":"read"' "$(body GET /chats/$G2 -H "$AU")"
+# e.g.3 read is a black hole: a member joining answers for nothing sent before it
+G3=$(body POST /groups -H "$AU" -F "data={\"name\":\"Hole\",\"members\":[\"$B\",\"$C\"]};type=application/json" -F "photoFile=@$PNG" | id)
+body POST /chats/$G3/messages -H "$AU" -F 'text=read me' > /dev/null
+body GET /chats/$G3 -H "$BU" > /dev/null; body GET /chats/$G3 -H "$CU" > /dev/null
+has "14 e.g.3 read once every member has seen it" '"state":"read"' "$(body GET /chats/$G3 -H "$AU")"
+code POST /groups/$G3/members -H "$AU" -H "$JS" -d "{\"members\":[\"$D\"]}" > /dev/null
+has "14 e.g.3 and still read after somebody joins" '"state":"read"' "$(body GET /chats/$G3 -H "$AU")"
+hasnt "14 e.g.3 a join never turns a message back" '"state":"received"' "$(body GET /chats/$G3 -H "$AU")"
+# a chat holds at most schemas.ChatMaxMessages: seeded by hand, 9999 calls would be absurd
+GF=$(body POST /groups -H "$AU" -F "data={\"name\":\"Full\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+sqlite3 db/wasatext.db "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < 9999)
+ INSERT INTO messages (id,chatId,userId,text,photoId,date)
+ SELECT printf('%08d-0000-4000-8000-000000000000', i), '$GF', '$A', 'm'||i, NULL,
+        strftime('%Y-%m-%dT%H:%M:%fZ', datetime('2020-01-01T00:00:00Z', '+'||i||' seconds')) FROM n;"
+eq  "14 the 10000th message fits"  201 "$(code POST /chats/$GF/messages -H "$AU" -F 'text=the last one')"
+eq  "14 the 10001st does not"      400 "$(code POST /chats/$GF/messages -H "$AU" -F 'text=one too many')"
+has "14 full body"       '"message":"the chat is full"' "$(body POST /chats/$GF/messages -H "$AU" -F 'text=one too many')"
+eq  "14 and the refused one wrote no row" 10000 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE chatId='$GF';")"
+# a message reaches the two reads it belongs to
+GN=$(body POST /groups -H "$AU" -F "data={\"name\":\"Newest\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+GO=$(body POST /groups -H "$AU" -F "data={\"name\":\"Older\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
+body POST /chats/$GO/messages -H "$AU" -F 'text=the older thing' > /dev/null
+body POST /chats/$GN/messages -H "$AU" -F 'text=the newest thing' > /dev/null
+has "14 it reaches the opened chat"  'the newest thing' "$(body GET /chats/$GN -H "$AU")"
+has "14 and the snippet of the list" 'the newest thing' "$(body GET /me/chats -H "$AU")"
+# sending moves a chat up the list, which is the whole sort key of §12
+# the two are compared against each other and not against the head of the list, which §12 pins ahead of both
+RANK() { body GET /me/chats -H "$AU" | grep -o '"id":"[0-9a-f-]*"' | grep -n "$1" | head -1 | cut -d: -f1; }
+if [ "$(RANK $GN)" -lt "$(RANK $GO)" ]; then ok; else no "14 the chat written last comes first" "GN=$(RANK $GN) GO=$(RANK $GO)"; fi
+body POST /chats/$GO/messages -H "$AU" -F 'text=and now this one' > /dev/null
+if [ "$(RANK $GO)" -lt "$(RANK $GN)" ]; then ok; else no "14 and writing again moves it back up" "GO=$(RANK $GO) GN=$(RANK $GN)"; fi
+
+echo "### 15. router level"
+eq "15 unknown path"   404 "$(code GET /nope)"
+eq "15 wrong method"   405 "$(code GET /session)"
+eq "15 trailing slash" 404 "$(code GET /users/ -H "$AU")"
 CORS=$(curl -s -D- -o /dev/null -X OPTIONS "$H/me/username" -H 'Origin: http://localhost:5173' \
   -H 'Access-Control-Request-Method: PATCH' -H 'Access-Control-Request-Headers: authorization,content-type')
-has "14 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
-has "14 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
-has "14 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
-has "14 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
+has "15 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
+has "15 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
+has "15 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
+has "15 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
 
 echo
 echo "==================================================="

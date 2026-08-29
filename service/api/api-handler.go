@@ -18,6 +18,7 @@ func (rt *_router) Handler() http.Handler {
 	rt.router.GET("/users", rt.wrap(rt.authenticate(rt.getUsers)))
 	rt.router.GET("/me/chats", rt.wrap(rt.authenticate(rt.getMyConversations)))
 	rt.router.GET("/chats/:chatId", rt.wrap(rt.authenticate(rt.getConversation)))
+	rt.router.POST("/chats/:chatId/messages", rt.wrap(rt.authenticate(rt.sendMessage)))
 	rt.router.POST("/private-chats", rt.wrap(rt.authenticate(rt.createPrivateChat)))
 	rt.router.POST("/groups", rt.wrap(rt.authenticate(rt.createGroup)))
 	rt.router.PATCH("/groups/:groupId/name", rt.wrap(rt.authenticate(rt.setGroupName)))

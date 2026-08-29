@@ -6,18 +6,24 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/MercuriLorenzo/WASAText/service/globaltime"
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 )
 
 // GetConversation returns the chat of the given id with its members and its whole messages list
 // Reading a chat belongs to its members, so userId must be one of them
+//
+// Opening a chat is what reading it means, so this marks the chat read for the caller:
+// it is the only read of this package that writes, and the one that lets a member who never writes catch up with what it was sent
+// The states it answers with are the ones taken before that write,
+// so a message is handed over in the state it was in when the chat was asked for
+//
 // It returns ErrChatNotFound if no chat owns that id, and ErrNotAMember if the caller does not belong to it
 func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatId) (schemas.ChatDetail, error) {
 	// The chat, its members and its messages are three reads,
 	// and a message sent between the first and the last would reach the list while
 	// its sender is still missing from the members read before it:
-	// one transaction is what makes the three see the same chat
-	// Nothing here writes, so it is closed by the rollback below and never committed
+	// one transaction is what makes the three see the same chat, and what holds the write below with them
 	tx, err := db.c.Begin()
 	if err != nil {
 		return schemas.ChatDetail{}, fmt.Errorf("cannot start the transaction: %w", err)
@@ -91,15 +97,16 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	// the client anchors on the last message, and the page is given back in the order that chose it
 	// The query walks the (chatId, date) index backwards and stops at the page,
 	// so a chat of any length is read in the same bounded time,
-	// and rowid breaks the tie by insertion order between two messages that share a second
+	// and rowid breaks the tie by insertion order between two messages that share an instant
 	chat.Messages = make(schemas.Messages, 0)
 	messageRows, err := tx.Query(`SELECT m.id, m.userId, m.date, m.text, m.photoId,
-										 -- A message is read (rm) once every member excluded its sender has opened the chat after it arrived,
-										 -- which is a fact about the other members and not about the caller:
+										 -- A message is read (rm) once no member of the chat is left behind it,
+										 -- which is a fact about the members and not about the caller:
 										 -- the same message reads the same to everybody
+										 -- The sender needs no exception here: sending catches it up to its own message,
+										 -- so its date is never older than the one it wrote
 										 NOT EXISTS (SELECT 1 FROM chat_members AS rm
-													 WHERE rm.chatId = m.chatId AND rm.userId <> m.userId
-													 AND (rm.lastReadDate IS NULL OR rm.lastReadDate < m.date)) AS isRead
+													 WHERE rm.chatId = m.chatId AND rm.lastReadDate < m.date) AS isRead
 								  FROM messages AS m WHERE m.chatId = ?
 								  ORDER BY m.date DESC, m.rowid DESC LIMIT ?;`, chatId, schemas.ChatMessagesPageSize)
 	// Error reading the messages
@@ -194,6 +201,22 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	// Error during rows iteration
 	if err := commentRows.Err(); err != nil {
 		return schemas.ChatDetail{}, fmt.Errorf("cannot read the comments of the chat %q: %w", chatId, err)
+	}
+
+	// Opening a chat is what reading it means, so the caller is caught up to now
+	// The chat exists and the caller is a member, already checked above
+	// lastReadDate > prevents from breake time with manual set date, e.g. rollback the clock
+	now := globaltime.Now().UTC().Truncate(time.Millisecond).Format(dateFormat)
+	_, err = tx.Exec(`UPDATE chat_members SET lastReadDate = ?
+					  WHERE chatId = ? AND userId = ? AND lastReadDate < ?;`,
+		now, chatId, userId, now)
+	// Error updating the caller
+	if err != nil {
+		return schemas.ChatDetail{}, fmt.Errorf("cannot update the last read date of the caller: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return schemas.ChatDetail{}, fmt.Errorf("cannot commit the transaction: %w", err)
 	}
 
 	return chat, nil

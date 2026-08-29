@@ -39,16 +39,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 )
 
-// dateFormat is how every date column of the schema below is written and read
-// It holds no sub-second part, so every stored date has the same width and text order is chronological order,
-// which is what lets a query sort a chat and find its last message without parsing anything
-// Write it in UTC: an offset other than Z would sort by its own digits and not by the instant
-const dateFormat = time.RFC3339
+// dateFormat is how every date column of the schema below is written and read.
+// Fixed-width UTC milliseconds keep close operations distinct and make text order chronological.
+const dateFormat = "2006-01-02T15:04:05.000Z"
 
 // AppDatabase is the high level interface for the DB
 type AppDatabase interface {
@@ -59,6 +56,7 @@ type AppDatabase interface {
 	GetUsers(username schemas.Username) (schemas.Users, error)
 	GetMyConversations(userId schemas.UserId) (schemas.ChatSummaries, error)
 	GetConversation(userId schemas.UserId, chatId schemas.ChatId) (schemas.ChatDetail, error)
+	SendMessage(userId schemas.UserId, chatId schemas.ChatId, text schemas.MessageText, photoId schemas.PhotoId) (schemas.Message, error)
 	CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.UserId) (schemas.ChatId, bool, error)
 	CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatId, error)
 	SetGroupName(userId schemas.UserId, groupId schemas.ChatId, newName schemas.ChatName) (schemas.ChatBase, error)
@@ -117,10 +115,14 @@ func New(db *sql.DB) (AppDatabase, error) {
 	CREATE TABLE IF NOT EXISTS chat_members (
 		chatId TEXT NOT NULL,
 		userId TEXT NOT NULL,
-		-- The date this member last opened the chat, NULL while the member never opened it
-		-- A message is read by a member when the member opened the chat after the message arrived,
+		-- The date this member last saw the chat: written when it joins, when it opens the chat,
+		-- and when it writes in it, since writing in a chat means having seen what is above
+		-- A membership is born with the date it was created and never holds NULL, so a member that
+		-- never opened the chat reads as caught up as of joining and answers for nothing sent before it:
+		-- that is what keeps a message already read from turning back when somebody joins
+		-- A message is read by a member when the member saw the chat after the message arrived,
 		-- which is what makes the state of a message a value to compute and never a value to store
-		lastReadDate TEXT,
+		lastReadDate TEXT NOT NULL,
 		-- The composite key makes a duplicate membership unrepresentable
 		PRIMARY KEY (chatId, userId),
 		-- Dropping a chat drops its memberships

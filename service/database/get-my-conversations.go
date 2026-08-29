@@ -32,10 +32,11 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.ChatSumm
 									-- They are NULL together while the chat holds no message,
 									-- which is what tells the caller apart from a message whose own text or photo is missing
 									lm.id, lm.userId, lm.date, lm.text, lm.photoId,
-									-- A message is read (rm) once every member (excluded the sender) has opened the chat after the message arrived
+									-- A message is read (rm) once no member of the chat is left behind it
+									-- The sender needs no exception here: sending catches it up to its own message,
+									-- so its date is never older than the one it wrote
 									NOT EXISTS (SELECT 1 FROM chat_members AS rm
-												WHERE rm.chatId = c.id AND rm.userId <> lm.userId
-												AND (rm.lastReadDate IS NULL OR rm.lastReadDate < lm.date)) AS isRead
+												WHERE rm.chatId = c.id AND rm.lastReadDate < lm.date) AS isRead
 							 FROM chats AS c JOIN chat_members AS m ON m.chatId = c.id
 							 -- The other member (om) of a private chat, which is where its name and photo come from
 							 -- The chatType is part of the condition: a group has many other members and would come back once per member,

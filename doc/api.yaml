@@ -302,20 +302,23 @@ components:                                           # Reusable components
         id:
           $ref: '#/components/schemas/MessageId'
         date:
-          description: 'Message creation date'
+          description: 'Message creation date in UTC, with millisecond precision'
           type: string
           format: date-time
-          pattern: '^.{20,60}$'                          # Chars as date format YYYY-MM-DDTHH:MM:SSZ + extra complex
-          minLength: 20
-          maxLength: 60
-          example: '2025-11-04T10:32:00Z'
+          example: '2025-11-04T10:32:00.000Z'
         user:
           $ref: '#/components/schemas/UserId'
         state:
           description: |
             Message state, computed and never stored:
-            read: every member (excluded the sender) has opened the chat after the message arrived,
-            received: at least one of them has not.
+            read: no member of the chat is left behind the message,
+            received: at least one of them still is.
+            A member falls behind a message when the message arrives, and catches up by opening the chat
+            or by writing in it, since writing means having seen what is above.
+            The sender needs no exception: sending catches it up to its own message.
+            A member joins caught up, so it answers for nothing sent before it and a message
+            already read never turns back; a member leaving takes its answer with it,
+            so a message the leaver alone was holding becomes read.
             The value is a fact about the members and not about the caller,
             so it is the same for everybody looking at the chat
           type: string
@@ -330,9 +333,9 @@ components:                                           # Reusable components
     MessageText:
       description: 'Standard message text content'
       type: string
-      pattern: '^.{1,10000}$'                         # 1-10000 chars
+      pattern: '^.{1,5000}$'                          # 1-5000 chars
       minLength: 1
-      maxLength: 10000
+      maxLength: 5000
       example: 'Hello world!'
 
     Message:
@@ -807,7 +810,7 @@ paths:                                                # Rest endpoints
                       content:                            # Text and photo: the message carried both
                         text: 'Hey, are you free tonight?'
                         emoji: '📷'
-                      date: '2025-11-15T18:30:00Z'
+                      date: '2025-11-15T18:30:00.000Z'
                       user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                       state: 'read'
                   - id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
@@ -818,7 +821,7 @@ paths:                                                # Rest endpoints
                       id: 'a1b2c3d4-e5f6-42ec-a945-5fd21dec0538'
                       content:                            # Text only: no photo to stand for
                         text: 'I booked the hotel!'
-                      date: '2025-11-15T19:00:00Z'
+                      date: '2025-11-15T19:00:00.000Z'
                       user: 'cf6ad480-65aa-42ec-a945-5fd21dec0538'
                       state: 'received'
                   - id: '3f1a9c22-70b4-4d18-9a63-1c8e5f0b7d41'
@@ -844,6 +847,10 @@ paths:                                                # Rest endpoints
         the client asking for the older ones by scrolling up.
         Each message carries its reactions, and an empty list while nobody has reacted to it.
         There is no snippet here: the last message is the first element of the messages list, and it carries its full content.
+        Opening a chat marks it read for the caller, which is what the state of a message is computed from:
+        the states answered here are the ones taken before that, so a message is handed over in the state
+        it was in when the chat was asked for, and reads as read on the next call.
+        Nothing is marked for a caller that is answered 403.
       summary: 'Get a chat with its members and its messages'
       tags: ['PrivateChat', 'Group']
       parameters:
@@ -871,14 +878,14 @@ paths:                                                # Rest endpoints
                     content:                          # Text and photo: the message carries both
                       text: 'I will be there in 5 minutes.'
                       photo: '/photos/7b9d3f21-4c8e-4a55-9f10-2ed6c4b7a318'
-                    date: '2025-11-15T18:35:00Z'
+                    date: '2025-11-15T18:35:00.000Z'
                     user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                     state: 'received'                 # Bob has not opened the chat since it arrived
                     comments: []                      # Nobody reacted to it, and the list is never absent
                   - id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
                     content:                          # Text only: no photo to carry
                       text: 'Hey Bob, are you coming?'
-                    date: '2025-11-15T18:30:00Z'
+                    date: '2025-11-15T18:30:00.000Z'
                     user: 'c23a4180-65aa-42ec-a945-5fd21dec0538'
                     state: 'read'
                     comments:
@@ -899,7 +906,14 @@ paths:                                                # Rest endpoints
   /chats/{chatId}/messages:
     post:
       operationId: 'sendMessage'
-      description: 'Sends a new message to a specific chat. Supports text, photo, or both'
+      description: |
+        Writes a message in a chat the authenticated user is a member of.
+        Both kinds (private chat and group) are written here, as they are read under /chats/{chatId}.
+        A message carries text, a photo, or both, so the file part is optional,
+        and a text of spaces alone counts as no text: a message that would carry neither is a bad request.
+        Sending catches the sender up with the chat, since writing in it means having seen what is above.
+        In a chat the sender is alone in there is nobody to be behind, so the message is born 'read'.
+        A chat holds up to 10000 messages, and one that is full is a bad request and not a conflict.
       summary: 'Send a new message'
       tags: ['PrivateChat', 'Group']
       parameters:
@@ -929,17 +943,17 @@ paths:                                                # Rest endpoints
                 id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
                 content:
                   text: 'Hello, how are you?'
-                date: '2025-11-15T18:45:00Z'
+                date: '2025-11-15T18:45:00.000Z'
                 user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
-                state: 'received'
-                comments: []
-        '400':
-          $ref: '#/components/responses/BadRequest'
+                state: 'received'                     # Nobody else has seen it yet
+                comments: []                          # A message is born with no reaction
+        '400':                                        # Empty content, broken text, bad photo,
+          $ref: '#/components/responses/BadRequest'   # a body over the limit, or a chat already full
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
+        '403':                                        # Not a member of the chat
           $ref: '#/components/responses/Forbidden'
-        '404':
+        '404':                                        # No chat owns that id
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
@@ -975,7 +989,7 @@ paths:                                                # Rest endpoints
                 id: '4fa85f64-5717-4562-b3fc-2c963f66afa7'
                 content:
                   text: 'Hello, how are you?'
-                date: '2025-11-15T19:00:00Z'
+                date: '2025-11-15T19:00:00.000Z'
                 user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                 state: 'received'
                 comments: []
@@ -1138,7 +1152,7 @@ paths:                                                # Rest endpoints
                 id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
                 content:
                   text: 'This message has been deleted.'
-                date: '2025-11-15T18:45:00.123Z'
+                date: '2025-11-15T18:45:00.000Z'
                 user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                 state: 'read'
                 comments: []

@@ -3,7 +3,9 @@ package database
 import (
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/MercuriLorenzo/WASAText/service/globaltime"
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 	"github.com/gofrs/uuid"
 )
@@ -20,15 +22,19 @@ func (db *appdbimpl) CreateGroup(creator schemas.UserId, userIds schemas.Members
 	}
 	newId := schemas.ChatId(newUUID.String())
 
+	// A membership is born caught up to now and never holds NULL:
+	// the group carries no message yet, so there is nothing any of them could be behind
+	joinDate := globaltime.Now().UTC().Truncate(time.Millisecond).Format(dateFormat)
+
 	// One INSERT holding a tuple per member
 	// The creator opens the group and belongs to it, but the request does not carry it:
 	// it is the first tuple, so the list is never empty and the statement never ends on VALUES
 	// Every tuple is the same text so it is repeated
-	placeholders := "(?, ?)" + strings.Repeat(", (?, ?)", len(userIds))
-	args := make([]interface{}, 0, (len(userIds)+1)*2)
-	args = append(args, newId, creator)
+	placeholders := "(?, ?, ?)" + strings.Repeat(", (?, ?, ?)", len(userIds))
+	args := make([]interface{}, 0, (len(userIds)+1)*3)
+	args = append(args, newId, creator, joinDate)
 	for _, member := range userIds {
-		args = append(args, newId, member)
+		args = append(args, newId, member, joinDate)
 	}
 
 	// The chat row and its memberships must appear together or not at all:
@@ -49,7 +55,7 @@ func (db *appdbimpl) CreateGroup(creator schemas.UserId, userIds schemas.Members
 	}
 
 	// New chat created, update the memberships
-	_, err = tx.Exec(`INSERT INTO chat_members (chatId, userId) VALUES `+placeholders+`;`, args...)
+	_, err = tx.Exec(`INSERT INTO chat_members (chatId, userId, lastReadDate) VALUES `+placeholders+`;`, args...)
 	// Error inserting the members
 	if err != nil {
 		return schemas.ChatId(""), err

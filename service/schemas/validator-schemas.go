@@ -4,6 +4,7 @@ package schemas
 // The api layer calls it on everything that arrives from a client, so a handler never checks a field by hand
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"regexp"
@@ -106,6 +107,13 @@ func TruncateChars(s string, n int) string {
 
 	// rest is what comes after the nth char
 	return s[:len(s)-len(rest)]
+}
+
+// NullIfEmpty gives back a NullString that is invalid (-> SQL NULL) for an empty (or whitespace-only) string,
+// so the column holds NULL and never "".
+func NullIfEmpty(s string) sql.NullString {
+	trimmed := strings.TrimSpace(s)
+	return sql.NullString{String: trimmed, Valid: trimmed != ""}
 }
 
 // ---------- PHOTO ----------
@@ -339,8 +347,8 @@ func (m *MessageBase) IsValid() error {
 // Returns error if the MessageText does not meets the rules, otherwise nil
 func (t MessageText) IsValid() error {
 	n := CountChars(string(t))
-	if n < 1 || n > 10000 {
-		return fmt.Errorf("invalid message text length: %d; must be between 1 and 10000 characters", n)
+	if n < 1 || n > MessageTextMaxChars {
+		return fmt.Errorf("invalid message text length: %d; must be between 1 and %d characters", n, MessageTextMaxChars)
 	}
 	return nil
 }
@@ -563,6 +571,22 @@ func (m *MessageIdRequest) IsValid() error {
 		return errors.New("message id request is nil")
 	}
 	return m.MessageId.IsValid()
+}
+
+// Returns error if the MessageTextRequest does not meet the rules, otherwise nil
+func (m *MessageTextRequest) IsValid() error {
+	if m == nil {
+		return errors.New("message text request is nil")
+	}
+
+	// Text is optional because a message may contain only a photo
+	// Normalize whitespace-only text to absent, so the handler and database receive one representation
+	m.Text = MessageText(strings.TrimSpace(string(m.Text)))
+	if m.Text == "" {
+		return nil
+	}
+
+	return m.Text.IsValid()
 }
 
 // Returns error if the EmojiRequest does not meets the rules, otherwise nil

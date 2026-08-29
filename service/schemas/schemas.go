@@ -59,7 +59,7 @@ func (p PhotoURL) Id() PhotoId {
 }
 
 // ---------- USER ----------
-// Table: users (id, username, photo)
+// Table: users (id, username, photoId)
 type Username string
 type User struct {
 	Id       UserId   `json:"id"`
@@ -122,8 +122,10 @@ type ChatDetail struct {
 }
 
 // ---------- MESSAGE ----------
-// Table: messages (id, chatId, userId, text, photo, date, state)
+// Table: messages (id, chatId, userId, text, photoId, date)
 // The chatId column has no field here: the chat is already in the URL of every message endpoint
+// State has no column: it is computed from chat_members.lastReadDate at every read,
+// because it is a fact about who belongs to the chat now and that set changes under messages nobody touched
 type MessageState string
 
 const (
@@ -146,6 +148,9 @@ type MessageBase struct {
 	Date  time.Time    `json:"date"`
 	State MessageState `json:"state"`
 }
+
+// MessageTextMaxChars is the maximum length of a message text
+const MessageTextMaxChars = 5000
 
 type MessageText string
 type MessageContent struct {
@@ -211,6 +216,9 @@ type MembersRequest struct {
 }
 type MessageIdRequest struct {
 	MessageId MessageId `json:"messageId"` // forwardMessage
+}
+type MessageTextRequest struct {
+	Text MessageText `json:"text"` // sendMessage, the text part of the multipart body
 }
 type EmojiRequest struct {
 	Emoji Emoji `json:"emoji"` // commentMessage

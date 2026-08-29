@@ -145,23 +145,29 @@ eq  "S14 no row written to chats" "$CHATS_BEFORE" "$(sqlite3 db/wasatext.db "SEL
 echo "S15 — the homepage preview is the last message of the opened chat"
 A=$(mk "s15a$R"); B=$(mk "s15b$R"); AU="Authorization: Bearer $A"; BU="Authorization: Bearer $B"
 P=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
-sqlite3 db/wasatext.db "DELETE FROM messages WHERE id IN ('55555555-5555-4555-8555-555555555555','66666666-6666-4666-8666-666666666666');"
 LONG=$(printf 'abcdefghij%.0s' $(seq 1 12))
-sqlite3 db/wasatext.db "INSERT INTO messages (id,chatId,userId,text,photoId,date) VALUES
- ('55555555-5555-4555-8555-555555555555','$P','$B','older one',NULL,'2026-08-24T09:00:00Z'),
- ('66666666-6666-4666-8666-666666666666','$P','$B','$LONG',NULL,'2026-08-24T10:00:00Z');"
+# both are written by the endpoint, so their order is the one the server gave them
+body POST /chats/$P/messages -H "$BU" -F 'text=older one' > /dev/null
+NEWEST=$(body POST /chats/$P/messages -H "$BU" -F "text=$LONG" | id)
 LIST=$(body GET /me/chats -H "$AU")
 DET=$(body GET /chats/$P -H "$AU")
 eq  "S15 the preview is the newest message" \
     "$(echo "$LIST" | sed 's/.*"snippet":{"id":"\([^"]*\)".*/\1/')" \
     "$(echo "$DET" | sed 's/.*"messages":\[{"id":"\([^"]*\)".*/\1/')"
-eq  "S15 and it is the one just written" '66666666-6666-4666-8666-666666666666' "$(echo "$DET" | sed 's/.*"messages":\[{"id":"\([^"]*\)".*/\1/')"
+eq  "S15 and it is the one just written" "$NEWEST" "$(echo "$DET" | sed 's/.*"messages":\[{"id":"\([^"]*\)".*/\1/')"
 has "S15 the list cuts the text to 50" "\"text\":\"$(printf 'abcdefghij%.0s' $(seq 1 5))\"" "$LIST"
 has "S15 the opened chat keeps it whole" "\"text\":\"$LONG\"" "$DET"
 eq  "S15 the older message is only in the opened chat" 2 "$(echo "$DET" | grep -o '"state":"' | wc -l | tr -d ' ')"
 hasnt "S15 the list carries no messages list" '"messages":' "$LIST"
 has "S15 the opened chat carries no preview" '"messages":' "$DET"
-eq  "S15 opening the chat does not change the list" "$LIST" "$(body GET /me/chats -H "$AU")"
+# opening the chat changes exactly one thing in the list: the state of the snippet, which is what
+# marking it read means. The two reads are otherwise the same bytes, preview and ordering included
+AFTER=$(body GET /me/chats -H "$AU")
+has "S15 the snippet was received before the chat was opened" '"state":"received"' "$LIST"
+has "S15 and reads read once it has been"                     '"state":"read"'     "$AFTER"
+eq  "S15 opening the chat changes nothing else in the list" \
+    "$(echo "$LIST"  | sed 's/"state":"[a-z]*"/"state":"X"/g')" \
+    "$(echo "$AFTER" | sed 's/"state":"[a-z]*"/"state":"X"/g')"
 
 echo
 echo "==================================================="
