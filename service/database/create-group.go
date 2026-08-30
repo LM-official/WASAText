@@ -24,7 +24,7 @@ func (db *appdbimpl) CreateGroup(creator schemas.UserId, userIds schemas.Members
 
 	// A membership is born caught up to now and never holds NULL:
 	// the group carries no message yet, so there is nothing any of them could be behind
-	joinDate := globaltime.Now().UTC().Truncate(time.Millisecond).Format(dateFormat)
+	joinDate := globaltime.Format(globaltime.Now().UTC().Truncate(time.Millisecond))
 
 	// One INSERT holding a tuple per member
 	// The creator opens the group and belongs to it, but the request does not carry it:

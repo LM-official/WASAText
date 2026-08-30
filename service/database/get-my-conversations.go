@@ -3,8 +3,8 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"time"
 
+	"github.com/MercuriLorenzo/WASAText/service/globaltime"
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 )
 
@@ -85,7 +85,7 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.ChatSumm
 
 		// user and date mimic id so if the id is valid also the other two are
 		// Valid last message
-		date, err := time.Parse(dateFormat, msgDate.String)
+		date, err := globaltime.Parse(msgDate.String)
 		// A date the schema cannot have written: the row is broken, not the request
 		if err != nil {
 			return schemas.ChatSummaries{}, fmt.Errorf("cannot read the date of the last message: %w", err)

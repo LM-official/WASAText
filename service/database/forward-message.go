@@ -22,9 +22,10 @@ func (db *appdbimpl) ForwardMessage(userId schemas.UserId, chatId schemas.ChatId
 	defer func() { _ = tx.Rollback() }()
 
 	// 1. does the source message exist, and is the caller a member of its chat
-	// A plain WHERE is fine here — a missing message legitimately means "zero rows",
+	// A plain WHERE is fine here, a missing message legitimately means "zero rows",
 	// which matches the ErrNoRows pattern already used for the chat lookup in SendMessage
 	// Also get the content of the source message
+	// messages.chatId is a FOREIGN KEY on chats(id), so a message row existing already guarantees its chat exists too
 	var srcChatId schemas.ChatId
 	var srcMember bool
 	var srcText, srcPhotoId sql.NullString
@@ -86,7 +87,7 @@ func (db *appdbimpl) ForwardMessage(userId schemas.UserId, chatId schemas.ChatId
 	// The date is written into the message and into the lastReadDate of its sender, so it is taken once here:
 	// the two must be the same string for message state consistency
 	date := globaltime.Now().UTC().Truncate(time.Millisecond)
-	dateText := date.Format(dateFormat)
+	dateText := globaltime.Format(date)
 
 	// The forwarded message is a new row in the destination chat, carrying the same content as the source
 	_, err = tx.Exec(`INSERT INTO messages (id, chatId, userId, text, photoId, date) VALUES (?, ?, ?, ?, ?, ?);`,
@@ -98,7 +99,7 @@ func (db *appdbimpl) ForwardMessage(userId schemas.UserId, chatId schemas.ChatId
 
 	// Writing in a chat means having seen what is above, so the sender is caught up to its own message
 	// The value is the date of the message itself
-	// lastReadDate > prevents from breake time with manual set date, e.g. rollback the clock
+	// The lastReadDate < guard prevents a clock rollback from moving the value backwards
 	_, err = tx.Exec(`UPDATE chat_members SET lastReadDate = ?
 					  WHERE chatId = ? AND userId = ? AND lastReadDate < ?;`,
 		dateText, chatId, userId, dateText)

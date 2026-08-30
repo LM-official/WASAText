@@ -70,7 +70,7 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 	// New chat created, update the memberships
 	// A membership is born caught up to now and never holds NULL:
 	// the chat carries no message yet, so there is nothing either of them could be behind
-	joinDate := globaltime.Now().UTC().Truncate(time.Millisecond).Format(dateFormat)
+	joinDate := globaltime.Format(globaltime.Now().UTC().Truncate(time.Millisecond))
 	_, err = tx.Exec(`INSERT INTO chat_members (chatId, userId, lastReadDate) VALUES (?, ?, ?), (?, ?, ?);`,
 		newId, userId1, joinDate, newId, userId2, joinDate)
 	// Error inserting the members

@@ -74,7 +74,7 @@ func (db *appdbimpl) SendMessage(userId schemas.UserId, chatId schemas.ChatId, t
 	// The date is written into the message and into the lastReadDate of its sender, so it is taken once here:
 	// the two must be the same string for message state consistency
 	date := globaltime.Now().UTC().Truncate(time.Millisecond)
-	dateText := date.Format(dateFormat)
+	dateText := globaltime.Format(date)
 
 	// An absent text and an absent photo reach the column as NULL and never as an empty string:
 	// both NULL leave a row with nothing to preview

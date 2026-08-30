@@ -43,10 +43,6 @@ import (
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 )
 
-// dateFormat is how every date column of the schema below is written and read.
-// Fixed-width UTC milliseconds keep close operations distinct and make text order chronological.
-const dateFormat = "2006-01-02T15:04:05.000Z"
-
 // AppDatabase is the high level interface for the DB
 type AppDatabase interface {
 	// My methods
@@ -58,6 +54,7 @@ type AppDatabase interface {
 	GetConversation(userId schemas.UserId, chatId schemas.ChatId) (schemas.ChatDetail, error)
 	SendMessage(userId schemas.UserId, chatId schemas.ChatId, text schemas.MessageText, photoId schemas.PhotoId) (schemas.Message, error)
 	ForwardMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) (schemas.Message, error)
+	CommentMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId, emoji schemas.Emoji) (schemas.Message, bool, error)
 	CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.UserId) (schemas.ChatId, bool, error)
 	CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatId, error)
 	SetGroupName(userId schemas.UserId, groupId schemas.ChatId, newName schemas.ChatName) (schemas.ChatBase, error)

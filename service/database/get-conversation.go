@@ -133,7 +133,7 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 		}
 
 		// A date the schema cannot have written: the row is broken, not the request
-		message.Date, err = time.Parse(dateFormat, msgDate)
+		message.Date, err = globaltime.Parse(msgDate)
 		if err != nil {
 			return schemas.ChatDetail{}, fmt.Errorf("cannot read the date of the message %q: %w", message.Id, err)
 		}
@@ -206,7 +206,7 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	// Opening a chat is what reading it means, so the caller is caught up to now
 	// The chat exists and the caller is a member, already checked above
 	// lastReadDate > prevents from breake time with manual set date, e.g. rollback the clock
-	now := globaltime.Now().UTC().Truncate(time.Millisecond).Format(dateFormat)
+	now := globaltime.Format(globaltime.Now().UTC().Truncate(time.Millisecond))
 	_, err = tx.Exec(`UPDATE chat_members SET lastReadDate = ?
 					  WHERE chatId = ? AND userId = ? AND lastReadDate < ?;`,
 		now, chatId, userId, now)

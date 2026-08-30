@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/endpoints.md section 17, S1-S16 — the scenarios: a sequence, not a single call
+# tests/endpoints.md section 18, S1-S17 — the scenarios: a sequence, not a single call
 cd /Users/lorenzo/WASAText
 H=localhost:3000
 R=$(date +%s)
@@ -192,6 +192,33 @@ DEST=$(body GET /chats/$PD -H "$CU")
 has "S16 the opened destination contains the copy" "\"id\":\"$MF\"" "$DEST"
 has "S16 the opened destination carries the same photo" "\"photo\":\"/photos/$PFWD\"" "$DEST"
 has "S16 the preview becomes read after C opens it" '"state":"read"' "$(body GET /me/chats -H "$CU")"
+
+echo "S17 — reactions update one message without creating another or changing its preview"
+A=$(mk "s17a$R"); B=$(mk "s17b$R"); C=$(mk "s17c$R")
+AU="Authorization: Bearer $A"; BU="Authorization: Bearer $B"; CU="Authorization: Bearer $C"
+G=$(body POST /groups -H "$AU" -F "$(DATA "S17 $R" "\"$B\",\"$C\"")" -F "photoFile=@$PNG" | id)
+M=$(body POST /chats/$G/messages -H "$BU" -F 'text=keep this preview' | id)
+CP=/chats/$G/messages/$M/comments/me
+N0=$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE chatId='$G';")
+RA=$(body PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"👍"}')
+A1=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$M' AND userId='$A';")
+has "S17 A's reaction is returned on the message" "\"user\":\"$A\",\"emoji\":\"👍\"" "$RA"
+body PUT "$CP" -H "$BU" -H "$JS" -d '{"emoji":"😂"}' > /dev/null
+LIST=$(body GET /me/chats -H "$AU")
+has "S17 reacting does not replace the preview message" "\"snippet\":{\"id\":\"$M\"" "$LIST"
+has "S17 the preview content is unchanged" '"text":"keep this preview"' "$LIST"
+has "S17 the preview remains received while C is behind" '"state":"received"' "$LIST"
+OPEN=$(body GET /chats/$G -H "$CU")
+has "S17 opening the chat shows A's reaction" "\"user\":\"$A\",\"emoji\":\"👍\"" "$OPEN"
+has "S17 opening the chat shows B's reaction" "\"user\":\"$B\",\"emoji\":\"😂\"" "$OPEN"
+RA2=$(body PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"🔥"}')
+A2=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$M' AND userId='$A';")
+eq  "S17 updating A's reaction preserves its id" "$A1" "$A2"
+has "S17 update contains the new reaction" "\"user\":\"$A\",\"emoji\":\"🔥\"" "$RA2"
+hasnt "S17 update removes A's old reaction" "\"user\":\"$A\",\"emoji\":\"👍\"" "$RA2"
+has "S17 state is read after every member has caught up" '"state":"read"' "$RA2"
+eq  "S17 still one row per reacting member" 2 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$M';")"
+eq  "S17 reacting never creates another message" "$N0" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE chatId='$G';")"
 
 echo
 echo "==================================================="

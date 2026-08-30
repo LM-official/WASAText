@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/endpoints.md, sections 0-16, for the endpoints registered in api-handler.go
+# tests/endpoints.md, sections 0-17, for the endpoints registered in api-handler.go
 cd /Users/lorenzo/WASAText
 H=localhost:3000
 PASS=0; FAIL=0; FAILED=()
@@ -365,7 +365,7 @@ has "13 text only message"  '"content":{"text":"SECOND in that millisecond"}' "$
 has "13 photo only message" '"content":{"photo":"/photos/' "$PC"
 hasnt "13 no bare prefix on a message without a photo" '"photo":"/photos/"' "$PC"
 has "13 the opened chat carries the whole text, where the snippet cuts it" "\"text\":\"$LONGTEXT\"" "$GC"
-# the comments, written by hand: commentMessage does not exist yet
+# comments inserted by hand here keep this read test independent from the writer exercised in §16
 CMIDS="'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'"
 sqlite3 db/wasatext.db "DELETE FROM comments WHERE id IN ($CMIDS);"
 sqlite3 db/wasatext.db "INSERT INTO comments (id,messageId,userId,emoji) VALUES
@@ -633,16 +633,115 @@ eq "15 GET on the path" 405 "$(code GET /chats/$PD/messages/forwards -H "$AU")"
 eq "15 trailing slash"  404 "$(code POST /chats/$PD/messages/forwards/ -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
 eq "15 no token wins over malformed body" 401 "$(code POST /chats/$PD/messages/forwards -H "$JS" -d '{')"
 
-echo "### 16. router level"
-eq "16 unknown path"   404 "$(code GET /nope)"
-eq "16 wrong method"   405 "$(code GET /session)"
-eq "16 trailing slash" 404 "$(code GET /users/ -H "$AU")"
+echo "### 16. commentMessage  (reply: updated Message, 201 create / 200 update)"
+# A, B and C share the target group; B writes the message and D is the outsider
+CG=$(body POST /groups -H "$AU" -F "data={\"name\":\"Comments\",\"members\":[\"$B\",\"$C\"]};type=application/json" -F "photoFile=@$PNG" | id)
+CM_SRC=$(body POST /chats/$CG/messages -H "$BU" -F 'text=react to this' -F "photoFile=@$PNG")
+CMID=$(echo "$CM_SRC" | id)
+CMPHOTO=$(echo "$CM_SRC" | sed 's/.*"photo":"\([^"]*\)".*/\1/')
+CMROW=$(sqlite3 db/wasatext.db "SELECT userId||'|'||text||'|'||photoId||'|'||date FROM messages WHERE id='$CMID';")
+CMCOUNT=$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages;")
+PHOTOS16=$(ls db/photos | wc -l | tr -d ' ')
+CP=/chats/$CG/messages/$CMID/comments/me
+
+# Put A visibly behind, then commenting must catch A up while C still holds the message at received
+sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2000-01-01T00:00:00.000Z' WHERE chatId='$CG' AND userId='$A';"
+CM_FILE=/tmp/wasatext-comment-response-$$.json
+CM_CODE=$(curl -s -o "$CM_FILE" -w '%{http_code}' -X PUT "$H$CP" -H "$AU" -H "$JS" -d '{"emoji":"👍"}')
+CMR=$(tr -d '\n' < "$CM_FILE")
+eq  "16 first reaction" 201 "$CM_CODE"
+has "16 reply is the original Message" "\"id\":\"$CMID\",\"user\":\"$B\"" "$CMR"
+has "16 text stays on the message" '"text":"react to this"' "$CMR"
+has "16 exact photo stays on the message" "\"photo\":\"$CMPHOTO\"" "$CMR"
+has "16 caller's reaction is in the list" "\"user\":\"$A\",\"emoji\":\"👍\"" "$CMR"
+has "16 state remains received while C is behind" '"state":"received"' "$CMR"
+CAID=$(echo "$CMR" | sed 's/.*"comments":\[{"id":"\([^"]*\)".*/\1/')
+eq  "16 one row for A" 1 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$CMID' AND userId='$A';")"
+eq  "16 A is caught up by commenting" 1 \
+    "$(sqlite3 db/wasatext.db "SELECT lastReadDate >= (SELECT date FROM messages WHERE id='$CMID') FROM chat_members WHERE chatId='$CG' AND userId='$A';")"
+eq  "16 message row is untouched" "$CMROW" \
+    "$(sqlite3 db/wasatext.db "SELECT userId||'|'||text||'|'||photoId||'|'||date FROM messages WHERE id='$CMID';")"
+eq  "16 commenting adds no message" "$CMCOUNT" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages;")"
+eq  "16 commenting writes no photo" "$PHOTOS16" "$(ls db/photos | wc -l | tr -d ' ')"
+
+# A second PUT updates A's one row: the reaction id stays stable and no second row is added
+UP_CODE=$(curl -s -o "$CM_FILE" -w '%{http_code}' -X PUT "$H$CP" -H "$AU" -H "$JS" -d '{"emoji":"😂"}')
+UPR=$(tr -d '\n' < "$CM_FILE")
+eq  "16 existing reaction update" 200 "$UP_CODE"
+NEW_CAID=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$CMID' AND userId='$A';")
+eq  "16 update preserves the comment id" "$CAID" "$NEW_CAID"
+eq  "16 update keeps one row" 1 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$CMID' AND userId='$A';")"
+eq  "16 update stores the new emoji" '😂' "$(sqlite3 db/wasatext.db "SELECT emoji FROM comments WHERE messageId='$CMID' AND userId='$A';")"
+has "16 update reply has the new emoji" '"emoji":"😂"' "$UPR"
+hasnt "16 update reply drops the old emoji" '"emoji":"👍"' "$UPR"
+
+# lastReadDate is monotonic even if the local clock is behind a value already stored
+sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2099-01-01T00:00:00.000Z' WHERE chatId='$CG' AND userId='$A';"
+body PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"🔥"}' > /dev/null
+eq "16 commenting never moves lastReadDate backwards" '2099-01-01T00:00:00.000Z' \
+   "$(sqlite3 db/wasatext.db "SELECT lastReadDate FROM chat_members WHERE chatId='$CG' AND userId='$A';")"
+
+# Other members get their own rows; when C reacts, every member has seen the message and its state is read
+has "16 B adds a second user's reaction" "\"user\":\"$B\",\"emoji\":\"🎉\"" \
+    "$(body PUT "$CP" -H "$BU" -H "$JS" -d '{"emoji":"🎉"}')"
+CM_C=$(body PUT "$CP" -H "$CU" -H "$JS" -d '{"emoji":"❤️"}')
+eq  "16 one reaction per each of three members" 3 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$CMID';")"
+has "16 C's reaction is returned" "\"user\":\"$C\",\"emoji\":\"❤️\"" "$CM_C"
+has "16 state becomes read when C catches up" '"state":"read"' "$CM_C"
+
+# Both chat kinds use the same endpoint: FWID is a message in the A+C private destination from §15
+eq "16 private chat message" 201 "$(code PUT /chats/$PD/messages/$FWID/comments/me -H "$CU" -H "$JS" -d '{"emoji":"👍"}')"
+
+# Membership and ownership failures are transactional
+REF16=$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM comments)||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$CG' ORDER BY userId));")
+eq  "16 outsider" 403 "$(code PUT "$CP" -H "$DU" -H "$JS" -d '{"emoji":"👍"}')"
+has "16 outsider body" '"message":"not a member of the chat"' "$(body PUT "$CP" -H "$DU" -H "$JS" -d '{"emoji":"👍"}')"
+eq  "16 message under the wrong chat" 404 "$(code PUT /chats/$PD/messages/$CMID/comments/me -H "$AU" -H "$JS" -d '{"emoji":"👍"}')"
+has "16 wrong chat body" '"message":"chat not found"' "$(body PUT /chats/$PD/messages/$CMID/comments/me -H "$AU" -H "$JS" -d '{"emoji":"👍"}')"
+eq  "16 unknown message" 404 "$(code PUT /chats/$CG/messages/11111111-2222-4333-8444-555555555555/comments/me -H "$AU" -H "$JS" -d '{"emoji":"👍"}')"
+has "16 unknown message body" '"message":"message not found"' "$(body PUT /chats/$CG/messages/11111111-2222-4333-8444-555555555555/comments/me -H "$AU" -H "$JS" -d '{"emoji":"👍"}')"
+has "16 missing message wins over missing chat" '"message":"message not found"' \
+    "$(body PUT /chats/11111111-2222-4333-8444-555555555555/messages/22222222-2222-4222-8222-222222222222/comments/me -H "$AU" -H "$JS" -d '{"emoji":"👍"}')"
+eq "16 refused calls write nothing" "$REF16" \
+   "$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM comments)||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$CG' ORDER BY userId));")"
+
+# URL ids are validated before the JSON body, chat first and then message
+eq  "16 bad chat id" 400 "$(code PUT /chats/not-a-uuid/messages/$CMID/comments/me -H "$AU" -H "$JS" -d '{')"
+has "16 bad chat id body" '"message":"invalid chat id"' "$(body PUT /chats/not-a-uuid/messages/$CMID/comments/me -H "$AU" -H "$JS" -d '{')"
+eq  "16 uppercase chat id" 400 "$(code PUT /chats/$(echo $CG | tr a-f A-F)/messages/$CMID/comments/me -H "$AU" -H "$JS" -d '{"emoji":"👍"}')"
+eq  "16 bad message id" 400 "$(code PUT /chats/$CG/messages/not-a-uuid/comments/me -H "$AU" -H "$JS" -d '{')"
+has "16 bad message id body" '"message":"invalid message id"' "$(body PUT /chats/$CG/messages/not-a-uuid/comments/me -H "$AU" -H "$JS" -d '{')"
+eq  "16 uppercase message id" 400 "$(code PUT /chats/$CG/messages/$(echo $CMID | tr a-f A-F)/comments/me -H "$AU" -H "$JS" -d '{"emoji":"👍"}')"
+
+# Emoji is one grapheme cluster capped at 16 code points; it is not restricted to Unicode's emoji list
+eq  "16 missing emoji" 400 "$(code PUT "$CP" -H "$AU" -H "$JS" -d '{}')"
+eq  "16 empty emoji" 400 "$(code PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":""}')"
+eq  "16 two symbols" 400 "$(code PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"👍😂"}')"
+eq  "16 malformed body" 400 "$(code PUT "$CP" -H "$AU" -H "$JS" -d '{')"
+E16="a$(printf '\u0301%.0s' $(seq 1 15))"
+E17="a$(printf '\u0301%.0s' $(seq 1 16))"
+eq  "16 one grapheme of 16 code points" 200 "$(code PUT "$CP" -H "$AU" -H "$JS" -d "{\"emoji\":\"$E16\"}")"
+eq  "16 one grapheme of 17 code points" 400 "$(code PUT "$CP" -H "$AU" -H "$JS" -d "{\"emoji\":\"$E17\"}")"
+eq  "16 a non-emoji symbol is accepted" 200 "$(code PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"a"}')"
+eq  "16 family emoji is one symbol" 200 "$(code PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"👨‍👩‍👧‍👦"}')"
+eq  "16 unknown JSON field is ignored" 200 "$(code PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"👍","admin":true}')"
+
+# Authentication and router-level answers
+eq "16 no token wins over malformed ids/body" 401 "$(code PUT /chats/nope/messages/nope/comments/me -H "$JS" -d '{')"
+eq "16 POST on the path" 405 "$(code POST "$CP" -H "$AU" -H "$JS" -d '{"emoji":"👍"}')"
+eq "16 GET on the path" 405 "$(code GET "$CP" -H "$AU")"
+eq "16 trailing slash" 404 "$(code PUT "$CP/" -H "$AU" -H "$JS" -d '{"emoji":"👍"}')"
+
+echo "### 17. router level"
+eq "17 unknown path"   404 "$(code GET /nope)"
+eq "17 wrong method"   405 "$(code GET /session)"
+eq "17 trailing slash" 404 "$(code GET /users/ -H "$AU")"
 CORS=$(curl -s -D- -o /dev/null -X OPTIONS "$H/me/username" -H 'Origin: http://localhost:5173' \
   -H 'Access-Control-Request-Method: PATCH' -H 'Access-Control-Request-Headers: authorization,content-type')
-has "16 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
-has "16 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
-has "16 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
-has "16 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
+has "17 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
+has "17 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
+has "17 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
+has "17 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
 
 echo
 echo "==================================================="

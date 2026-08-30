@@ -54,7 +54,7 @@ func (db *appdbimpl) AddToGroup(userId schemas.UserId, groupId schemas.ChatId, u
 		// A member joins caught up to now, and never behind the messages that were sent before it:
 		// a message every member had already read must not turn back to received because somebody joined,
 		// so the ones it was never sent are the ones it answers for none of
-		joinDate := globaltime.Now().UTC().Truncate(time.Millisecond).Format(dateFormat)
+		joinDate := globaltime.Format(globaltime.Now().Truncate(time.Millisecond))
 
 		// One INSERT holding a tuple per member
 		// Every tuple is the same text so it is repeated, one less than the members: the first one is written here

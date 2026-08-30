@@ -41,7 +41,9 @@ components:                                           # Reusable components
 
 
     Emoji:
-      description: 'The emoji character exactly one symbol'
+      description: |
+        Exactly one grapheme cluster, capped at 16 Unicode code points.
+        Validation is structural rather than an emoji-catalogue lookup, so any one symbol is accepted.
       type: string
       pattern: '^.{1,16}$'                            # 1 symbol, at most 16 code points
       minLength: 1
@@ -1057,7 +1059,7 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /chats/{chatId}/messages/{messageId}/comments/comment: # current user unique comment
+  /chats/{chatId}/messages/{messageId}/comments/me: # current user unique comment
     parameters:
       - $ref: '#/components/parameters/ParamChatId'
       - $ref: '#/components/parameters/ParamMessageId'
@@ -1065,9 +1067,11 @@ paths:                                                # Rest endpoints
     put:
       operationId: 'commentMessage'
       description: |
-        Sets or updates the user comment for a specific message. 
-        A user can have only one active comment per message.
-        If a comment already exists, this operation replaces it with the new emoji.
+        Sets the authenticated user's reaction on a message in a chat they belong to.
+        The message must belong to the chat named in the URL.
+        Each member has at most one reaction on a message; another call updates that row's emoji while preserving its comment id.
+        Commenting catches the caller up with the chat since writing in it means having seen what is above.
+        The returned Message contains its unchanged content plus the complete updated comments list and its state after that catch-up. 
       summary: 'Comment a message'
       tags: ['PrivateChat', 'Group']
       requestBody:
@@ -1077,6 +1081,7 @@ paths:                                                # Rest endpoints
             schema:
               description: 'Object containing the emoji of the comment'
               type: object                            # not a Comment: id and user are readOnly,
+              additionalProperties: false             # No other properties allowed by the contract
               properties:                             # the server knows both and the client cannot send them
                 emoji:
                   $ref: '#/components/schemas/Emoji'
@@ -1084,32 +1089,46 @@ paths:                                                # Rest endpoints
         required: true
       responses:
         '200':
-          description: 'Comment updated successfully'
+          description: 'Existing comment updated successfully; returns the message with its updated comments'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Comment'
+                $ref: '#/components/schemas/Message'
               example:
-                id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
-                emoji: '👍'           
+                id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
+                content:
+                  text: 'Hello, how are you?'
+                date: '2025-11-15T18:45:00.000Z'
                 user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
+                state: 'received'
+                comments:
+                  - id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
+                    emoji: '👍'
+                    user: '1a6a4180-65aa-42ec-a945-5fd21dec0538'
         '201':
-          description: 'Comment created successfully'
+          description: 'New comment created successfully; returns the message with its updated comments'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Comment'
+                $ref: '#/components/schemas/Message'
               example:
-                id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
-                emoji: '👍'           
+                id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
+                content:
+                  text: 'Hello, how are you?'
+                date: '2025-11-15T18:45:00.000Z'
                 user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
-        '400':
+                state: 'received'
+                comments:
+                  - id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
+                    emoji: '👍'
+                    user: '1a6a4180-65aa-42ec-a945-5fd21dec0538'
+        '400':                                        # Invalid URL id, body or emoji
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
+        '403':                                        # The message belongs to this chat, but the caller does not
           $ref: '#/components/responses/Forbidden'
-        '404':
+        '404':                                        # No message owns the id, or it belongs to another chat
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'
