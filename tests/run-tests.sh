@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/endpoints.md, sections 0-17, for the endpoints registered in api-handler.go
+# tests/endpoints.md, sections 0-18, for the endpoints registered in api-handler.go
 cd /Users/lorenzo/WASAText
 H=localhost:3000
 PASS=0; FAIL=0; FAILED=()
@@ -732,16 +732,88 @@ eq "16 POST on the path" 405 "$(code POST "$CP" -H "$AU" -H "$JS" -d '{"emoji":"
 eq "16 GET on the path" 405 "$(code GET "$CP" -H "$AU")"
 eq "16 trailing slash" 404 "$(code PUT "$CP/" -H "$AU" -H "$JS" -d '{"emoji":"👍"}')"
 
-echo "### 17. router level"
-eq "17 unknown path"   404 "$(code GET /nope)"
-eq "17 wrong method"   405 "$(code GET /session)"
-eq "17 trailing slash" 404 "$(code GET /users/ -H "$AU")"
+echo "### 17. uncommentMessage  (reply: 204, no body)"
+# Section 16 left one reaction from A, B and C on CMID. Removing A's must leave B and C untouched.
+UBID=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$CMID' AND userId='$B';")
+UCID=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$CMID' AND userId='$C';")
+UCMCOUNT=$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages;")
+UPHOTOS=$(ls db/photos | wc -l | tr -d ' ')
+sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2000-01-01T00:00:00.000Z' WHERE chatId='$CG' AND userId='$A';"
+UC_FILE=/tmp/wasatext-uncomment-response-$$.txt
+UC_CODE=$(curl -s -o "$UC_FILE" -w '%{http_code}' -X DELETE "$H$CP" -H "$AU")
+eq "17 own reaction removed" 204 "$UC_CODE"
+eq "17 success body is empty" 0 "$(wc -c < "$UC_FILE" | tr -d ' ')"
+eq "17 caller's row is gone" 0 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$CMID' AND userId='$A';")"
+eq "17 the other two rows remain" 2 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$CMID';")"
+eq "17 B's comment id is untouched" "$UBID" "$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$CMID' AND userId='$B';")"
+eq "17 C's comment id is untouched" "$UCID" "$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$CMID' AND userId='$C';")"
+eq "17 successful uncomment catches A up" 1 \
+   "$(sqlite3 db/wasatext.db "SELECT lastReadDate >= (SELECT date FROM messages WHERE id='$CMID') FROM chat_members WHERE chatId='$CG' AND userId='$A';")"
+eq "17 message row is untouched" "$CMROW" \
+   "$(sqlite3 db/wasatext.db "SELECT userId||'|'||text||'|'||photoId||'|'||date FROM messages WHERE id='$CMID';")"
+eq "17 uncommenting removes no message" "$UCMCOUNT" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages;")"
+eq "17 uncommenting removes no photo" "$UPHOTOS" "$(ls db/photos | wc -l | tr -d ' ')"
+UC_CHAT=$(body GET /chats/$CG -H "$CU")
+has "17 opened chat keeps B's reaction" "\"user\":\"$B\",\"emoji\":\"🎉\"" "$UC_CHAT"
+has "17 opened chat keeps C's reaction" "\"user\":\"$C\",\"emoji\":\"❤️\"" "$UC_CHAT"
+hasnt "17 opened chat drops A's reaction" "\"user\":\"$A\"" "$UC_CHAT"
+
+# Once the resource is deleted, PUT creates a new one with a new identity. A later DELETE still cannot move time backwards.
+RECREATE_CODE=$(curl -s -o "$CM_FILE" -w '%{http_code}' -X PUT "$H$CP" -H "$AU" -H "$JS" -d '{"emoji":"🔥"}')
+eq "17 recreating the deleted reaction" 201 "$RECREATE_CODE"
+RECREATED_AID=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$CMID' AND userId='$A';")
+if [ "$RECREATED_AID" != "$CAID" ]; then ok; else no "17 recreation gets a new id" "$CAID"; fi
+sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2099-01-01T00:00:00.000Z' WHERE chatId='$CG' AND userId='$A';"
+eq "17 remove the recreated reaction" 204 "$(code DELETE "$CP" -H "$AU")"
+eq "17 uncommenting never moves lastReadDate backwards" '2099-01-01T00:00:00.000Z' \
+   "$(sqlite3 db/wasatext.db "SELECT lastReadDate FROM chat_members WHERE chatId='$CG' AND userId='$A';")"
+eq "17 removing an absent own comment" 404 "$(code DELETE "$CP" -H "$AU")"
+has "17 absent own comment body" '"message":"comment not found"' "$(body DELETE "$CP" -H "$AU")"
+
+# Both chat kinds use the same operation: C owns the private-chat reaction created in section 16.
+PRIVATE_CP=/chats/$PD/messages/$FWID/comments/me
+eq "17 private chat reaction removed" 204 "$(code DELETE "$PRIVATE_CP" -H "$CU")"
+eq "17 private comment row is gone" 0 \
+   "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$FWID' AND userId='$C';")"
+
+# Every refused request is read-only, including the 404 for a member who owns no comment.
+REF17=$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM comments)||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$CG' ORDER BY userId));")
+eq "17 outsider" 403 "$(code DELETE "$CP" -H "$DU")"
+has "17 outsider body" '"message":"not a member of the chat"' "$(body DELETE "$CP" -H "$DU")"
+eq "17 message under the wrong chat" 404 "$(code DELETE /chats/$PD/messages/$CMID/comments/me -H "$AU")"
+has "17 wrong chat body" '"message":"chat not found"' "$(body DELETE /chats/$PD/messages/$CMID/comments/me -H "$AU")"
+eq "17 unknown message" 404 "$(code DELETE /chats/$CG/messages/11111111-2222-4333-8444-555555555555/comments/me -H "$AU")"
+has "17 unknown message body" '"message":"message not found"' \
+    "$(body DELETE /chats/$CG/messages/11111111-2222-4333-8444-555555555555/comments/me -H "$AU")"
+has "17 missing message wins over missing chat" '"message":"message not found"' \
+    "$(body DELETE /chats/11111111-2222-4333-8444-555555555555/messages/22222222-2222-4222-8222-222222222222/comments/me -H "$AU")"
+eq "17 member without a comment" 404 "$(code DELETE "$CP" -H "$AU")"
+has "17 member without a comment body" '"message":"comment not found"' "$(body DELETE "$CP" -H "$AU")"
+eq "17 refused calls write nothing" "$REF17" \
+   "$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM comments)||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$CG' ORDER BY userId));")"
+
+# URL ids are validated by the handler, chat first and then message; DELETE has no request body to validate.
+eq "17 bad chat id" 400 "$(code DELETE /chats/not-a-uuid/messages/$CMID/comments/me -H "$AU")"
+has "17 bad chat id body" '"message":"invalid chat id"' "$(body DELETE /chats/not-a-uuid/messages/$CMID/comments/me -H "$AU")"
+eq "17 uppercase chat id" 400 "$(code DELETE /chats/$(echo $CG | tr a-f A-F)/messages/$CMID/comments/me -H "$AU")"
+eq "17 bad message id" 400 "$(code DELETE /chats/$CG/messages/not-a-uuid/comments/me -H "$AU")"
+has "17 bad message id body" '"message":"invalid message id"' "$(body DELETE /chats/$CG/messages/not-a-uuid/comments/me -H "$AU")"
+eq "17 uppercase message id" 400 "$(code DELETE /chats/$CG/messages/$(echo $CMID | tr a-f A-F)/comments/me -H "$AU")"
+
+# Authentication and route shape.
+eq "17 no token wins over malformed ids" 401 "$(code DELETE /chats/nope/messages/nope/comments/me)"
+eq "17 trailing slash" 404 "$(code DELETE "$CP/" -H "$AU")"
+
+echo "### 18. router level"
+eq "18 unknown path"   404 "$(code GET /nope)"
+eq "18 wrong method"   405 "$(code GET /session)"
+eq "18 trailing slash" 404 "$(code GET /users/ -H "$AU")"
 CORS=$(curl -s -D- -o /dev/null -X OPTIONS "$H/me/username" -H 'Origin: http://localhost:5173' \
   -H 'Access-Control-Request-Method: PATCH' -H 'Access-Control-Request-Headers: authorization,content-type')
-has "17 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
-has "17 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
-has "17 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
-has "17 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
+has "18 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
+has "18 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
+has "18 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
+has "18 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
 
 echo
 echo "==================================================="

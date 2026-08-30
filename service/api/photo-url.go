@@ -43,7 +43,6 @@ func withMessagePhotoURL(m schemas.Message) schemas.Message {
 	if m.Content.Photo == "" {
 		return m
 	}
-
 	m.Content.Photo = m.Content.Photo.Id().URL()
 	return m
 }

@@ -48,19 +48,16 @@ func (rt *_router) forwardMessage(w http.ResponseWriter, r *http.Request, ps htt
 			writeError(w, ctx, http.StatusNotFound, "message not found", nil)
 			return
 		}
-
 		// No chat owns the destination id
 		if errors.Is(err, database.ErrChatNotFound) {
 			writeError(w, ctx, http.StatusNotFound, "chat not found", nil)
 			return
 		}
-
 		// Forwarding out of the source chat or into the destination chat belongs to their members
 		if errors.Is(err, database.ErrNotAMember) {
 			writeError(w, ctx, http.StatusForbidden, "not a member of the chat", nil)
 			return
 		}
-
 		// The destination chat already holds schemas.ChatMaxMessages messages:
 		// what was asked cannot fit, which is about the request and not about who is asking
 		if errors.Is(err, database.ErrChatFull) {

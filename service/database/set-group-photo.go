@@ -43,7 +43,6 @@ func (db *appdbimpl) SetGroupPhoto(userId schemas.UserId, groupId schemas.ChatId
 					   RETURNING id, name, photoId;`,
 		newPhotoId, groupId, schemas.ChatTypeGroup, groupId, userId,
 	).Scan(&chat.Id, &chat.Name, &chat.Photo)
-
 	// Nothing was updated, and the SELECT above already found the group:
 	// the condition left to fail is the one on the members, so the caller is not in the group
 	if errors.Is(err, sql.ErrNoRows) {

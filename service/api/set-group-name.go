@@ -45,7 +45,6 @@ func (rt *_router) setGroupName(w http.ResponseWriter, r *http.Request, ps httpr
 			writeError(w, ctx, http.StatusNotFound, "group not found", nil)
 			return
 		}
-
 		// The group is there, but renaming it belongs to its members
 		if errors.Is(err, database.ErrNotAMember) {
 			writeError(w, ctx, http.StatusForbidden, "not a member of the group", nil)

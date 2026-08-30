@@ -76,13 +76,11 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.ChatSumm
 			&msgId, &msgUser, &msgDate, &msgText, &msgPhoto, &isRead); err != nil {
 			return schemas.ChatSummaries{}, fmt.Errorf("cannot read a chat of user %q: %w", userId, err)
 		}
-
 		// Invalid last message, snippet is nil by default
 		if !msgId.Valid {
 			results = append(results, chat)
 			continue
 		}
-
 		// user and date mimic id so if the id is valid also the other two are
 		// Valid last message
 		date, err := globaltime.Parse(msgDate.String)
@@ -100,7 +98,6 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.ChatSumm
 		if msgPhoto.Valid {
 			content.Emoji = schemas.SnippetPhotoEmoji
 		}
-
 		// No snippet content means no snippet
 		if content.Text == "" && content.Emoji == "" {
 			results = append(results, chat)
@@ -117,7 +114,6 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.ChatSumm
 			},
 			Content: content,
 		}
-
 		if isRead {
 			snippet.State = schemas.MessageStateRead
 		}

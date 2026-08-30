@@ -53,19 +53,16 @@ func (rt *_router) commentMessage(w http.ResponseWriter, r *http.Request, ps htt
 			writeError(w, ctx, http.StatusNotFound, "message not found", nil)
 			return
 		}
-
 		// The message exists but not under this chat: nothing answers at this URL either way
 		if errors.Is(err, database.ErrChatNotFound) {
 			writeError(w, ctx, http.StatusNotFound, "chat not found", nil)
 			return
 		}
-
 		// The message belongs to this chat, but reacting to it belongs to its members
 		if errors.Is(err, database.ErrNotAMember) {
 			writeError(w, ctx, http.StatusForbidden, "not a member of the chat", nil)
 			return
 		}
-
 		// There is no separate comments cap to check: at most one row belongs to each member,
 		// and a chat cannot have more than schemas.GroupMaxMembers members
 		// The UNIQUE(messageId, userId) constraint prevents a user from adding more than one comment to the same message,

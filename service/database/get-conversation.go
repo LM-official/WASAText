@@ -126,12 +126,11 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 		var msgText, msgPhoto sql.NullString
 		var isRead bool
 		var message schemas.Message
-
+		
 		// Error reading a row: a shorter list would be a wrong answer, not a partial one
 		if err := messageRows.Scan(&message.Id, &message.User, &msgDate, &msgText, &msgPhoto, &isRead); err != nil {
 			return schemas.ChatDetail{}, fmt.Errorf("cannot read a message of the chat %q: %w", chatId, err)
 		}
-
 		// A date the schema cannot have written: the row is broken, not the request
 		message.Date, err = globaltime.Parse(msgDate)
 		if err != nil {

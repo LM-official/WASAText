@@ -38,7 +38,6 @@ func (rt *_router) leaveGroup(w http.ResponseWriter, r *http.Request, ps httprou
 			writeError(w, ctx, http.StatusNotFound, "group not found", nil)
 			return
 		}
-
 		// The group is there, but leaving it belongs to its members
 		if errors.Is(err, database.ErrNotAMember) {
 			writeError(w, ctx, http.StatusForbidden, "not a member of the group", nil)

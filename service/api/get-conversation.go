@@ -36,7 +36,6 @@ func (rt *_router) getConversation(w http.ResponseWriter, r *http.Request, ps ht
 			writeError(w, ctx, http.StatusNotFound, "chat not found", nil)
 			return
 		}
-
 		// The chat is there, but reading it belongs to its members
 		if errors.Is(err, database.ErrNotAMember) {
 			writeError(w, ctx, http.StatusForbidden, "not a member of the chat", nil)

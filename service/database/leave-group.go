@@ -39,7 +39,6 @@ func (db *appdbimpl) LeaveGroup(userId schemas.UserId, groupId schemas.ChatId) (
 					   FROM chats c WHERE c.id = ? AND c.chatType = ?;`,
 		userId, groupId, schemas.ChatTypeGroup,
 	).Scan(&photoId, &isMember)
-
 	// No group owns that id: it may not exist at all, or be a private chat
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrChatNotFound

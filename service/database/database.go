@@ -55,6 +55,7 @@ type AppDatabase interface {
 	SendMessage(userId schemas.UserId, chatId schemas.ChatId, text schemas.MessageText, photoId schemas.PhotoId) (schemas.Message, error)
 	ForwardMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) (schemas.Message, error)
 	CommentMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId, emoji schemas.Emoji) (schemas.Message, bool, error)
+	UncommentMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) error
 	CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.UserId) (schemas.ChatId, bool, error)
 	CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatId, error)
 	SetGroupName(userId schemas.UserId, groupId schemas.ChatId, newName schemas.ChatName) (schemas.ChatBase, error)
@@ -167,7 +168,7 @@ func New(db *sql.DB) (AppDatabase, error) {
 		messageId TEXT NOT NULL,
 		userId TEXT NOT NULL,
 		emoji TEXT NOT NULL,
-		-- Only one comment per user per message, so commentMessage replaces instead of piling up
+		-- Only one comment per user per message, so commentMessage updates instead of piling up
 		-- Is already sorted by messageId, so do not need an index
 		UNIQUE (messageId, userId),
 		-- Dropping a message drops its comments

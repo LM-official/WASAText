@@ -28,7 +28,6 @@ func (db *appdbimpl) DoLogin(username schemas.Username) (schemas.UserId, bool, e
 	if err != nil {
 		return schemas.UserId(""), false, fmt.Errorf("cannot insert the new user %q: %w", newId, err)
 	}
-
 	written, err := res.RowsAffected()
 	if err != nil {
 		return schemas.UserId(""), false, fmt.Errorf("cannot get the number of rows affected by the insert of the new user %q: %w", newId, err)

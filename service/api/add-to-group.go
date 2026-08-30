@@ -55,13 +55,11 @@ func (rt *_router) addToGroup(w http.ResponseWriter, r *http.Request, ps httprou
 			writeError(w, ctx, http.StatusNotFound, "group not found", nil)
 			return
 		}
-
 		// The group is there, but joining people to it belongs to its members
 		if errors.Is(err, database.ErrNotAMember) {
 			writeError(w, ctx, http.StatusForbidden, "not a member of the group", nil)
 			return
 		}
-
 		// The additions would take the group past schemas.GroupMaxMembers:
 		// what was asked cannot fit, which is about the request and not about who is asking
 		if errors.Is(err, database.ErrGroupFull) {

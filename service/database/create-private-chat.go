@@ -52,7 +52,6 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 	if err != nil {
 		return schemas.ChatId(""), false, fmt.Errorf("cannot insert the new chat %q: %w", newId, err)
 	}
-
 	written, err := res.RowsAffected()
 	if err != nil {
 		return schemas.ChatId(""), false, fmt.Errorf("cannot read the number of rows written for the new chat %q: %w", newId, err)

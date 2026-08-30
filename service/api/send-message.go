@@ -93,19 +93,16 @@ func (rt *_router) sendMessage(w http.ResponseWriter, r *http.Request, ps httpro
 				logWarning(ctx, "cannot delete the photo of a failed message", delErr)
 			}
 		}
-
 		// No chat owns that id
 		if errors.Is(err, database.ErrChatNotFound) {
 			writeError(w, ctx, http.StatusNotFound, "chat not found", nil)
 			return
 		}
-
 		// The chat is there, but writing in it belongs to its members
 		if errors.Is(err, database.ErrNotAMember) {
 			writeError(w, ctx, http.StatusForbidden, "not a member of the chat", nil)
 			return
 		}
-
 		// The chat already holds schemas.ChatMaxMessages messages:
 		// what was asked cannot fit, which is about the request and not about who is asking
 		if errors.Is(err, database.ErrChatFull) {

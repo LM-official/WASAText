@@ -44,7 +44,6 @@ func unmarshalAndValidate(data []byte, req validator) error {
 func writeJSON(w http.ResponseWriter, ctx reqcontext.RequestContext, code int, body interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-
 	if err := json.NewEncoder(w).Encode(body); err != nil {
 		// The status line is already on the wire: the reply cannot be fixed, only logged
 		ctx.Logger.WithError(err).Error("cannot encode the response body")

@@ -70,14 +70,12 @@ func (rt *_router) setGroupPhoto(w http.ResponseWriter, r *http.Request, ps http
 		if delErr := rt.photos.Delete(newPhotoId); delErr != nil {
 			logWarning(ctx, "cannot delete the photo of a failed group photo update", delErr)
 		}
-
 		// No group owns that id: it may not exist at all, or be a private chat,
 		// which borrows its photo from the other member and owns none to update
 		if errors.Is(err, database.ErrChatNotFound) {
 			writeError(w, ctx, http.StatusNotFound, "group not found", nil)
 			return
 		}
-
 		// The group is there, but changing its photo belongs to its members
 		if errors.Is(err, database.ErrNotAMember) {
 			writeError(w, ctx, http.StatusForbidden, "not a member of the group", nil)

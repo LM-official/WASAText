@@ -26,7 +26,6 @@ func (rt *_router) authenticate(next httpRouterHandler) httpRouterHandler {
 			return
 		}
 		userId := schemas.UserId(strings.TrimPrefix(authHeader, "Bearer "))
-
 		if err := userId.IsValid(); err != nil {
 			// Invalid userId format
 			writeError(w, ctx, http.StatusUnauthorized, "invalid token format", err)

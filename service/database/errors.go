@@ -29,4 +29,7 @@ var (
 
 	// ErrMessageNotFound is returned when no message owns the given id
 	ErrMessageNotFound = errors.New("message not found")
+
+	// ErrCommentNotFound is returned when the caller has no comment on the message
+	ErrCommentNotFound = errors.New("comment not found")
 )

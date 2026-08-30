@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/endpoints.md section 18, S1-S17 — the scenarios: a sequence, not a single call
+# tests/endpoints.md section 19, S1-S18 — the scenarios: a sequence, not a single call
 cd /Users/lorenzo/WASAText
 H=localhost:3000
 R=$(date +%s)
@@ -219,6 +219,33 @@ hasnt "S17 update removes A's old reaction" "\"user\":\"$A\",\"emoji\":\"👍\""
 has "S17 state is read after every member has caught up" '"state":"read"' "$RA2"
 eq  "S17 still one row per reacting member" 2 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$M';")"
 eq  "S17 reacting never creates another message" "$N0" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE chatId='$G';")"
+
+echo "S18 — removing and recreating my reaction changes only my comment resource"
+A=$(mk "s18a$R"); B=$(mk "s18b$R"); C=$(mk "s18c$R")
+AU="Authorization: Bearer $A"; BU="Authorization: Bearer $B"; CU="Authorization: Bearer $C"
+G=$(body POST /groups -H "$AU" -F "$(DATA "S18 $R" "\"$B\",\"$C\"")" -F "photoFile=@$PNG" | id)
+M=$(body POST /chats/$G/messages -H "$BU" -F 'text=keep this after uncomment' | id)
+CP=/chats/$G/messages/$M/comments/me
+N0=$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE chatId='$G';")
+body PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"👍"}' > /dev/null
+A1=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$M' AND userId='$A';")
+body PUT "$CP" -H "$BU" -H "$JS" -d '{"emoji":"😂"}' > /dev/null
+eq "S18 A removes its own reaction" 204 "$(code DELETE "$CP" -H "$AU")"
+eq "S18 A's row is gone" 0 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$M' AND userId='$A';")"
+OPEN=$(body GET /chats/$G -H "$CU")
+hasnt "S18 opened chat drops A's reaction" "\"user\":\"$A\",\"emoji\":\"👍\"" "$OPEN"
+has "S18 opened chat keeps B's reaction" "\"user\":\"$B\",\"emoji\":\"😂\"" "$OPEN"
+LIST=$(body GET /me/chats -H "$AU")
+has "S18 preview is still the same message" "\"snippet\":{\"id\":\"$M\"" "$LIST"
+has "S18 preview content is unchanged" '"text":"keep this after uncomment"' "$LIST"
+hasnt "S18 preview does not project comments" '"comments":' "$LIST"
+has "S18 preview state stays read" '"state":"read"' "$LIST"
+eq "S18 recreating A's reaction is a create" 201 "$(code PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"🔥"}')"
+A2=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$M' AND userId='$A';")
+ne "S18 recreation gets a new comment id" "$A1" "$A2"
+eq "S18 A removes the recreated reaction" 204 "$(code DELETE "$CP" -H "$AU")"
+eq "S18 B remains the only commenter" 1 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$M' AND userId='$B';")"
+eq "S18 uncommenting never removes the message" "$N0" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE chatId='$G';")"
 
 echo
 echo "==================================================="
