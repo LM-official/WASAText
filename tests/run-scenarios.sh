@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/endpoints.md section 19, S1-S18 — the scenarios: a sequence, not a single call
+# tests/endpoints.md section 20, S1-S19 — the scenarios: a sequence, not a single call
 cd /Users/lorenzo/WASAText
 H=localhost:3000
 R=$(date +%s)
@@ -246,6 +246,37 @@ ne "S18 recreation gets a new comment id" "$A1" "$A2"
 eq "S18 A removes the recreated reaction" 204 "$(code DELETE "$CP" -H "$AU")"
 eq "S18 B remains the only commenter" 1 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$M' AND userId='$B';")"
 eq "S18 uncommenting never removes the message" "$N0" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE chatId='$G';")"
+
+echo "S19 — the comments collection follows create, update and delete without marking a message read"
+A=$(mk "s19a$R"); B=$(mk "s19b$R"); C=$(mk "s19c$R")
+AU="Authorization: Bearer $A"; BU="Authorization: Bearer $B"; CU="Authorization: Bearer $C"
+G=$(body POST /groups -H "$AU" -F "$(DATA "S19 $R" "\"$B\",\"$C\"")" -F "photoFile=@$PNG" | id)
+M=$(body POST /chats/$G/messages -H "$BU" -F 'text=read only comments collection' | id)
+CP=/chats/$G/messages/$M/comments/me
+CC=/chats/$G/messages/$M/comments
+N0=$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE chatId='$G';")
+eq "S19 empty collection" 404 "$(code GET "$CC" -H "$CU")"
+eq "S19 A creates a reaction" 201 "$(code PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"👍"}')"
+AID=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$M' AND userId='$A';")
+eq "S19 B creates a newer reaction" 201 "$(code PUT "$CP" -H "$BU" -H "$JS" -d '{"emoji":"😂"}')"
+BID=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$M' AND userId='$B';")
+sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2000-01-01T00:00:00.000Z' WHERE chatId='$G' AND userId='$C';"
+eq "S19 collection is newest first" \
+   "{\"comments\":[{\"id\":\"$BID\",\"user\":\"$B\",\"emoji\":\"😂\"},{\"id\":\"$AID\",\"user\":\"$A\",\"emoji\":\"👍\"}]}" \
+   "$(body GET "$CC" -H "$CU")"
+eq "S19 reading comments does not mark the message read" '2000-01-01T00:00:00.000Z' \
+   "$(sqlite3 db/wasatext.db "SELECT lastReadDate FROM chat_members WHERE chatId='$G' AND userId='$C';")"
+eq "S19 A updates its reaction" 200 "$(code PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"🔥"}')"
+eq "S19 update keeps id and position" \
+   "{\"comments\":[{\"id\":\"$BID\",\"user\":\"$B\",\"emoji\":\"😂\"},{\"id\":\"$AID\",\"user\":\"$A\",\"emoji\":\"🔥\"}]}" \
+   "$(body GET "$CC" -H "$CU")"
+eq "S19 B removes its reaction" 204 "$(code DELETE "$CP" -H "$BU")"
+eq "S19 collection now contains only A" \
+   "{\"comments\":[{\"id\":\"$AID\",\"user\":\"$A\",\"emoji\":\"🔥\"}]}" \
+   "$(body GET "$CC" -H "$CU")"
+eq "S19 A removes the final reaction" 204 "$(code DELETE "$CP" -H "$AU")"
+eq "S19 collection is absent again" 404 "$(code GET "$CC" -H "$CU")"
+eq "S19 the message survives the whole lifecycle" "$N0" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE chatId='$G';")"
 
 echo
 echo "==================================================="

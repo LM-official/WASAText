@@ -28,6 +28,7 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	if err != nil {
 		return schemas.ChatDetail{}, fmt.Errorf("cannot start the transaction: %w", err)
 	}
+	// Undo everything unless the commit below is reached
 	defer func() { _ = tx.Rollback() }()
 
 	// One row that answers both questions the call asks, and carries what the reply needs:

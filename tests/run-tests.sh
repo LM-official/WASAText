@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/endpoints.md, sections 0-18, for the endpoints registered in api-handler.go
+# tests/endpoints.md, sections 0-19, for the endpoints registered in api-handler.go
 cd /Users/lorenzo/WASAText
 H=localhost:3000
 PASS=0; FAIL=0; FAILED=()
@@ -804,16 +804,92 @@ eq "17 uppercase message id" 400 "$(code DELETE /chats/$CG/messages/$(echo $CMID
 eq "17 no token wins over malformed ids" 401 "$(code DELETE /chats/nope/messages/nope/comments/me)"
 eq "17 trailing slash" 404 "$(code DELETE "$CP/" -H "$AU")"
 
-echo "### 18. router level"
-eq "18 unknown path"   404 "$(code GET /nope)"
-eq "18 wrong method"   405 "$(code GET /session)"
-eq "18 trailing slash" 404 "$(code GET /users/ -H "$AU")"
+echo "### 18. getMessageComments  (reply: Comments wrapper, 200; empty collection: 404)"
+GMC=/chats/$CG/messages/$CMID/comments
+GMC_FILE=/tmp/wasatext-get-comments-response-$$.json
+GMC_HDR=/tmp/wasatext-get-comments-headers-$$.txt
+
+# Section 17 left C's newer row before B's older row. A read returns that insertion order and changes nothing.
+sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2000-01-01T00:00:00.000Z' WHERE chatId='$CG' AND userId='$A';"
+GMC_ROWS=$(sqlite3 db/wasatext.db "SELECT group_concat(id||'|'||userId||'|'||emoji, ';') FROM (SELECT * FROM comments WHERE messageId='$CMID' ORDER BY rowid DESC);")
+GMC_MESSAGES=$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages;")
+GMC_PHOTOS=$(ls db/photos | wc -l | tr -d ' ')
+GMC_CODE=$(curl -s -D "$GMC_HDR" -o "$GMC_FILE" -w '%{http_code}' "$H$GMC" -H "$AU")
+GMC_BODY=$(tr -d '\n' < "$GMC_FILE")
+GMC_EXPECTED="{\"comments\":[{\"id\":\"$UCID\",\"user\":\"$C\",\"emoji\":\"❤️\"},{\"id\":\"$UBID\",\"user\":\"$B\",\"emoji\":\"🎉\"}]}"
+eq "18 member reads comments" 200 "$GMC_CODE"
+has "18 JSON content type" 'Content-Type: application/json' "$(tr -d '\r' < "$GMC_HDR")"
+eq "18 complete newest-first list" "$GMC_EXPECTED" "$GMC_BODY"
+eq "18 response has two comments" 2 "$(echo "$GMC_BODY" | grep -o '"id"' | wc -l | tr -d ' ')"
+eq "18 another member sees the same list" "$GMC_EXPECTED" "$(body GET "$GMC" -H "$BU")"
+eq "18 comments are not changed" "$GMC_ROWS" \
+   "$(sqlite3 db/wasatext.db "SELECT group_concat(id||'|'||userId||'|'||emoji, ';') FROM (SELECT * FROM comments WHERE messageId='$CMID' ORDER BY rowid DESC);")"
+eq "18 reading does not catch the caller up" '2000-01-01T00:00:00.000Z' \
+   "$(sqlite3 db/wasatext.db "SELECT lastReadDate FROM chat_members WHERE chatId='$CG' AND userId='$A';")"
+eq "18 reading changes no message" "$GMC_MESSAGES" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages;")"
+eq "18 reading changes no photo" "$GMC_PHOTOS" "$(ls db/photos | wc -l | tr -d ' ')"
+
+# Updating keeps B's id and rowid, while a newly recreated A comment becomes the newest row.
+eq "18 update B for ordering" 200 "$(code PUT "$CP" -H "$BU" -H "$JS" -d '{"emoji":"😎"}')"
+GMC_UPDATED="{\"comments\":[{\"id\":\"$UCID\",\"user\":\"$C\",\"emoji\":\"❤️\"},{\"id\":\"$UBID\",\"user\":\"$B\",\"emoji\":\"😎\"}]}"
+eq "18 emoji update keeps insertion order" "$GMC_UPDATED" "$(body GET "$GMC" -H "$AU")"
+eq "18 recreate A for ordering" 201 "$(code PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"🔥"}')"
+GMC_AID=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$CMID' AND userId='$A';")
+GMC_WITH_A="{\"comments\":[{\"id\":\"$GMC_AID\",\"user\":\"$A\",\"emoji\":\"🔥\"},{\"id\":\"$UCID\",\"user\":\"$C\",\"emoji\":\"❤️\"},{\"id\":\"$UBID\",\"user\":\"$B\",\"emoji\":\"😎\"}]}"
+eq "18 newly inserted comment comes first" "$GMC_WITH_A" "$(body GET "$GMC" -H "$CU")"
+eq "18 complete list now has three" 3 "$(body GET "$GMC" -H "$CU" | grep -o '"id"' | wc -l | tr -d ' ')"
+eq "18 remove ordering fixture" 204 "$(code DELETE "$CP" -H "$AU")"
+
+# The private message has no reactions after section 17: empty is a JSON 404 and remains read-only.
+PRIVATE_GMC=/chats/$PD/messages/$FWID/comments
+sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2000-01-01T00:00:00.000Z' WHERE chatId='$PD' AND userId='$C';"
+eq "18 message with no comments" 404 "$(code GET "$PRIVATE_GMC" -H "$CU")"
+has "18 empty collection body" '"message":"no comments found"' "$(body GET "$PRIVATE_GMC" -H "$CU")"
+eq "18 empty read does not catch the caller up" '2000-01-01T00:00:00.000Z' \
+   "$(sqlite3 db/wasatext.db "SELECT lastReadDate FROM chat_members WHERE chatId='$PD' AND userId='$C';")"
+eq "18 create private reaction fixture" 201 "$(code PUT "$PRIVATE_CP" -H "$CU" -H "$JS" -d '{"emoji":"👍"}')"
+PRIVATE_CID=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$FWID' AND userId='$C';")
+eq "18 private chat comments" 200 "$(code GET "$PRIVATE_GMC" -H "$AU")"
+eq "18 private chat list" "{\"comments\":[{\"id\":\"$PRIVATE_CID\",\"user\":\"$C\",\"emoji\":\"👍\"}]}" \
+   "$(body GET "$PRIVATE_GMC" -H "$AU")"
+eq "18 remove private fixture" 204 "$(code DELETE "$PRIVATE_CP" -H "$CU")"
+
+# Membership, ownership and syntax errors never change comments or read state.
+REF18=$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM comments)||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$CG' ORDER BY userId));")
+eq "18 outsider" 403 "$(code GET "$GMC" -H "$DU")"
+has "18 outsider body" '"message":"not a member of the chat"' "$(body GET "$GMC" -H "$DU")"
+eq "18 message under the wrong chat" 404 "$(code GET /chats/$PD/messages/$CMID/comments -H "$AU")"
+has "18 wrong chat body" '"message":"chat not found"' "$(body GET /chats/$PD/messages/$CMID/comments -H "$AU")"
+eq "18 unknown message" 404 "$(code GET /chats/$CG/messages/11111111-2222-4333-8444-555555555555/comments -H "$AU")"
+has "18 unknown message body" '"message":"message not found"' \
+    "$(body GET /chats/$CG/messages/11111111-2222-4333-8444-555555555555/comments -H "$AU")"
+has "18 missing message wins over missing chat" '"message":"message not found"' \
+    "$(body GET /chats/11111111-2222-4333-8444-555555555555/messages/22222222-2222-4222-8222-222222222222/comments -H "$AU")"
+eq "18 refused reads change nothing" "$REF18" \
+   "$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM comments)||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$CG' ORDER BY userId));")"
+
+eq "18 bad chat id" 400 "$(code GET /chats/not-a-uuid/messages/$CMID/comments -H "$AU")"
+has "18 bad chat id body" '"message":"invalid chat id"' "$(body GET /chats/not-a-uuid/messages/$CMID/comments -H "$AU")"
+eq "18 uppercase chat id" 400 "$(code GET /chats/$(echo $CG | tr a-f A-F)/messages/$CMID/comments -H "$AU")"
+eq "18 bad message id" 400 "$(code GET /chats/$CG/messages/not-a-uuid/comments -H "$AU")"
+has "18 bad message id body" '"message":"invalid message id"' "$(body GET /chats/$CG/messages/not-a-uuid/comments -H "$AU")"
+eq "18 uppercase message id" 400 "$(code GET /chats/$CG/messages/$(echo $CMID | tr a-f A-F)/comments -H "$AU")"
+
+eq "18 no token wins over malformed ids" 401 "$(code GET /chats/nope/messages/nope/comments)"
+eq "18 POST on the collection" 405 "$(code POST "$GMC" -H "$AU")"
+eq "18 DELETE on the collection" 405 "$(code DELETE "$GMC" -H "$AU")"
+eq "18 trailing slash" 404 "$(code GET "$GMC/" -H "$AU")"
+
+echo "### 19. router level"
+eq "19 unknown path"   404 "$(code GET /nope)"
+eq "19 wrong method"   405 "$(code GET /session)"
+eq "19 trailing slash" 404 "$(code GET /users/ -H "$AU")"
 CORS=$(curl -s -D- -o /dev/null -X OPTIONS "$H/me/username" -H 'Origin: http://localhost:5173' \
   -H 'Access-Control-Request-Method: PATCH' -H 'Access-Control-Request-Headers: authorization,content-type')
-has "18 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
-has "18 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
-has "18 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
-has "18 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
+has "19 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
+has "19 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
+has "19 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
+has "19 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
 
 echo
 echo "==================================================="

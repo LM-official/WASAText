@@ -1018,7 +1018,15 @@ paths:                                                # Rest endpoints
   /chats/{chatId}/messages/{messageId}/comments:
     get:
       operationId: 'getMessageComments'
-      description: 'Retrieves all comments associated with a specific message'
+      description: |
+        Returns every reaction on a message in newest-insertion-first order.
+        The message must belong to the chat named in the URL and
+        the authenticated caller must be a current member of that chat.
+        Reading comments catches the caller up with the chat by advancing lastReadDate to the current time without ever moving it backwards.
+        This catch-up also occurs when the message has no comments and the response is 404.
+        Updating an existing reaction preserves its position;
+        deleting and recreating it creates a new row that appears first.
+        A message with no comments returns 404.
       summary: 'Get message comments'
       tags: ['PrivateChat', 'Group']
       parameters:
@@ -1026,20 +1034,23 @@ paths:                                                # Rest endpoints
         - $ref: '#/components/parameters/ParamMessageId'
       responses:
         '200':
-          description: 'Message comments retrieved successfully'
+          description: 'Non-empty message comments retrieved successfully'
           content:
             application/json:
               schema:
                 description: 'Object containing the list of comments'
                 type: object
+                additionalProperties: false
                 properties:
                   comments:
-                    description: 'List of comments on a message'
+                    description: 'Comments in newest-insertion-first order'
                     type: array
                     items:
                       $ref: '#/components/schemas/Comment'
-                    minItems: 0
-                    maxItems: 1000
+                    minItems: 1
+                    maxItems: 100                     # At most one per chat member
+                    uniqueItems: true
+                required: [comments]
               example:
                 comments:
                   - id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
@@ -1048,13 +1059,13 @@ paths:                                                # Rest endpoints
                   - id: 'd63b4180-65aa-42ec-a945-5fd21dec0538'
                     emoji: '😂'           
                     user: '1a6a4180-65aa-42ec-a945-5fd21dec0538'
-        '400':
+        '400':                                        # Invalid chatId or messageId
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
+        '403':                                        # The message belongs to this chat, but the caller does not
           $ref: '#/components/responses/Forbidden'
-        '404':
+        '404':                                        # Missing message, wrong chat, or no comments on the message
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'

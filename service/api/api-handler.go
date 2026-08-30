@@ -22,6 +22,7 @@ func (rt *_router) Handler() http.Handler {
 	rt.router.POST("/chats/:chatId/messages/forwards", rt.wrap(rt.authenticate(rt.forwardMessage)))
 	rt.router.PUT("/chats/:chatId/messages/:messageId/comments/me", rt.wrap(rt.authenticate(rt.commentMessage)))
 	rt.router.DELETE("/chats/:chatId/messages/:messageId/comments/me", rt.wrap(rt.authenticate(rt.uncommentMessage)))
+	rt.router.GET("/chats/:chatId/messages/:messageId/comments", rt.wrap(rt.authenticate(rt.getMessageComments)))
 	rt.router.POST("/private-chats", rt.wrap(rt.authenticate(rt.createPrivateChat)))
 	rt.router.POST("/groups", rt.wrap(rt.authenticate(rt.createGroup)))
 	rt.router.PATCH("/groups/:groupId/name", rt.wrap(rt.authenticate(rt.setGroupName)))
