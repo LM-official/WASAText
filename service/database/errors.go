@@ -32,4 +32,9 @@ var (
 
 	// ErrCommentNotFound is returned when the caller has no comment on the message
 	ErrCommentNotFound = errors.New("comment not found")
+
+	// ErrNotSender is returned when the caller did not send the message
+	// Reacting, uncommenting and reading all belong to any member of the chat,
+	// but retracting a message one did not write does not: only its sender can delete it
+	ErrNotSender = errors.New("caller is not the sender of the message")
 )

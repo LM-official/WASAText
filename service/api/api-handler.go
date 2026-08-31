@@ -19,6 +19,7 @@ func (rt *_router) Handler() http.Handler {
 	rt.router.GET("/me/chats", rt.wrap(rt.authenticate(rt.getMyConversations)))
 	rt.router.GET("/chats/:chatId", rt.wrap(rt.authenticate(rt.getConversation)))
 	rt.router.POST("/chats/:chatId/messages", rt.wrap(rt.authenticate(rt.sendMessage)))
+	rt.router.DELETE("/chats/:chatId/messages/:messageId", rt.wrap(rt.authenticate(rt.deleteMessage)))
 	rt.router.POST("/chats/:chatId/messages/forwards", rt.wrap(rt.authenticate(rt.forwardMessage)))
 	rt.router.PUT("/chats/:chatId/messages/:messageId/comments/me", rt.wrap(rt.authenticate(rt.commentMessage)))
 	rt.router.DELETE("/chats/:chatId/messages/:messageId/comments/me", rt.wrap(rt.authenticate(rt.uncommentMessage)))

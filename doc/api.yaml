@@ -495,16 +495,6 @@ components:                                           # Reusable components
             code: 404
             message: 'The requested resource was not found'
 
-    #MethodNotAllowed:
-    #  description: '405 Method Not Allowed'
-    #  content:
-    #    application/json:
-    #      schema:
-    #        $ref: '#/components/schemas/Error'
-    #      example:
-    #        code: 405
-    #        message: 'The HTTP method used is not supported for this resource'
-
     # Server errors
     InternalServerError:
       description: '500 Internal Server Error'
@@ -1170,34 +1160,28 @@ paths:                                                # Rest endpoints
   /chats/{chatId}/messages/{messageId}:
     delete:
       operationId: 'deleteMessage'
-      description: 'Deletes a specific message. Only the author of the message can perform this action'
+      description: |
+        Deletes a message sent by the authenticated user from a chat they currently belong to.
+        The message must belong to the exact chat named in the URL; another member cannot delete it.
+        Every comment on the message is deleted with it, while the chat itself and its other messages remain.
+        A successful deletion catches the caller up with the chat without moving lastReadDate backwards.
+        If the message carried a photo, its file is removed only when no other resource references it;
+        a forwarded message that shares the photo therefore keeps it available.
       summary: 'Delete a message'
       tags: ['PrivateChat', 'Group']
       parameters:
         - $ref: '#/components/parameters/ParamChatId'
         - $ref: '#/components/parameters/ParamMessageId'
       responses:
-        '200':
-          description: 'Message deleted successfully'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Message'
-              example:
-                id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
-                content:
-                  text: 'This message has been deleted.'
-                date: '2025-11-15T18:45:00.000Z'
-                user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
-                state: 'read'
-                comments: []
-        '400':
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '400':                                        # Invalid chatId or messageId
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
+        '403':                                        # Caller is not a member, or is a member but not the sender
           $ref: '#/components/responses/Forbidden'
-        '404':
+        '404':                                        # Missing message, or message belongs to another chat
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'

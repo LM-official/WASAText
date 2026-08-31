@@ -53,6 +53,7 @@ type AppDatabase interface {
 	GetMyConversations(userId schemas.UserId) (schemas.ChatSummaries, error)
 	GetConversation(userId schemas.UserId, chatId schemas.ChatId) (schemas.ChatDetail, error)
 	SendMessage(userId schemas.UserId, chatId schemas.ChatId, text schemas.MessageText, photoId schemas.PhotoId) (schemas.Message, error)
+	DeleteMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) (schemas.PhotoId, error)
 	ForwardMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) (schemas.Message, error)
 	CommentMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId, emoji schemas.Emoji) (schemas.Message, bool, error)
 	UncommentMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) error

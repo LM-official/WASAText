@@ -41,7 +41,7 @@ sqlite3 "$DB" "DELETE FROM users WHERE username='$PROBE';"
 # foreign_keys is a per-connection pragma and the sqlite3 CLI does not inherit the DSN the server opens
 # (cmd/webapi/main.go passes _foreign_keys=on): without it a DELETE cascades nothing and strands rows
 sqlite3 "$DB" "PRAGMA foreign_keys=ON;
-	-- commentMessage, uncommentMessage and getMessageComments build their own reaction lifecycle after this clean slate
+	-- commentMessage, uncommentMessage, getMessageComments and deleteMessage build their own lifecycle after this clean slate
 	DELETE FROM comments;
 	DELETE FROM messages;
 	DELETE FROM chat_members;
@@ -53,7 +53,7 @@ sqlite3 "$DB" "PRAGMA foreign_keys=ON;
 find db/photos -type f ! -name "$DEFAULT_PHOTO" -delete
 
 # ---------- cast ----------
-# The four the sections are written around: dave belongs to nothing and is the outsider through §18
+# The four the sections are written around: dave belongs to nothing and is the outsider through §19
 for u in alice bob carl dave; do login "$u" > /dev/null; done
 
 # §3 reads these two together: '_' is a LIKE wildcard and a legal username character,
