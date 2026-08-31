@@ -80,9 +80,7 @@ func (db *appdbimpl) DeleteMessage(userId schemas.UserId, chatId schemas.ChatId,
 	// delete has no date of its own to reuse, so a fresh timestamp is taken here
 	// The lastReadDate < guard prevents a clock rollback from moving the value backwards
 	now := globaltime.Format(globaltime.Now().UTC().Truncate(time.Millisecond))
-	_, err = tx.Exec(`UPDATE chat_members SET lastReadDate = ?
-					  WHERE chatId = ? AND userId = ? AND lastReadDate < ?;`,
-		now, chatId, userId, now)
+	err = advanceLastReadDate(tx, userId, chatId, now)
 	// Error updating the caller
 	if err != nil {
 		return "", fmt.Errorf("cannot update the last read date of the caller: %w", err)

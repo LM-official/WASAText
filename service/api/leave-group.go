@@ -30,7 +30,7 @@ func (rt *_router) leaveGroup(w http.ResponseWriter, r *http.Request, ps httprou
 	}
 
 	// Query
-	oldPhotoId, err := rt.db.LeaveGroup(userId, groupId)
+	photosToRelease, err := rt.db.LeaveGroup(userId, groupId)
 	if err != nil {
 		// No group owns that id: it may not exist at all, or be a private chat,
 		// which borrows its two members from its pair and is left by neither
@@ -48,11 +48,11 @@ func (rt *_router) leaveGroup(w http.ResponseWriter, r *http.Request, ps httprou
 		return
 	}
 
-	// The caller may have been the last member, and a group nobody belongs to is dropped by the query above:
-	// its photo is garbage then
-	// LeaveGroup gives back that photo only when the group went with the caller,
-	// and an empty id otherwise, which releasePhoto takes as nothing to do
-	rt.releasePhoto(oldPhotoId, ctx)
+	// Only the last member receives candidates: the group photo and the distinct photos of its deleted messages
+	// A forwarded photo may still be used elsewhere, so releasePhoto checks every candidate after the commit
+	for _, photoId := range photosToRelease {
+		rt.releasePhoto(photoId, ctx)
+	}
 
 	// Response
 	// A DELETE answers with no body: this call remove the caller membership to the group

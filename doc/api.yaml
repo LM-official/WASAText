@@ -340,6 +340,16 @@ components:                                           # Reusable components
       maxLength: 5000
       example: 'Hello world!'
 
+    MessageContent:
+      description: 'Content of a message, text and/or photo'
+      type: object
+      properties:
+        text:
+          $ref: '#/components/schemas/MessageText'
+        photo:
+          $ref: '#/components/schemas/PhotoURL'
+      minProperties: 1                                # At least one of text/photo is present
+
     Message:
       description: 'Standard message'
       allOf:                                          # Combines MessageBase with the modifications below
@@ -347,14 +357,7 @@ components:                                           # Reusable components
         - type: object                                # Override type to object
           properties:
             content:
-              description: 'Content of the message, text and/or photo'
-              type: object
-              properties:
-                text:
-                  $ref: '#/components/schemas/MessageText'
-                photo:
-                  $ref: '#/components/schemas/PhotoURL'
-              minProperties: 1                        # At least one of text/photo is present
+              $ref: '#/components/schemas/MessageContent'
             comments:
               description: 'The reactions on this message, empty list if none'
               type: array
@@ -365,6 +368,24 @@ components:                                           # Reusable components
               uniqueItems: true                       # One comment per user, and one id per comment
           required: [content, comments]               # + id, date, user, state already required in MessageBase
 
+    SnippetText:
+      description: 'The head of the text of a message'
+      allOf:
+        - $ref: '#/components/schemas/MessageText'
+        - maxLength: 50
+
+    SnippetContent:
+      description: |
+        Summary of the content of a message: the head of its text, a symbol standing for its media, or both,
+        exactly as the message carries text, a photo, or both
+      type: object
+      properties:
+        text:
+          $ref: '#/components/schemas/SnippetText'
+        emoji:
+          $ref: '#/components/schemas/Emoji'          # A symbol where the opened chat carries the picture
+      minProperties: 1                                # At least one of text/emoji is present
+
     Snippet:
       description: 'Standard snippet of a message'
       allOf:                                          # Combines MessageBase with the modifications below
@@ -372,17 +393,7 @@ components:                                           # Reusable components
         - type: object                                # Override type to object
           properties:
             content:
-              description: |
-                Summary of the content of a message: the head of its text, a symbol standing for its media, or both,
-                exactly as the message carries text, a photo, or both
-              type: object
-              properties:
-                text:
-                  allOf:
-                    - $ref: '#/components/schemas/MessageText'
-                    - maxLength: 50
-                  $ref: '#/components/schemas/Emoji'  # A symbol where the opened chat carries the picture
-              minProperties: 1                        # At least one of text/emoji is present
+              $ref: '#/components/schemas/SnippetContent'
           required: [content]                         # + id (the message this snippet previews), date, user, state already required in MessageBase
 
     Comment:
@@ -398,6 +409,147 @@ components:                                           # Reusable components
       required: [id, user, emoji]
       additionalProperties: false                     # No other properties allowed
 
+    LoginRequest:
+      description: 'Login payload'
+      type: object
+      properties:
+        username:
+          $ref: '#/components/schemas/Username'
+      required: [username]
+
+    UserIdResponse:
+      description: 'Object containing the user id'
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UserId'
+      required: [id]
+      additionalProperties: false                     # No other properties allowed
+
+    UsersResponse:
+      description: 'Object containing the list of users'
+      type: object
+      properties:
+        users:
+          description: 'List of the matching users'
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+          minItems: 1                                 # An empty list is a 404
+          maxItems: 20                                # The query is capped at 20 rows
+          uniqueItems: true                           # A username belongs to one user only
+      required: [users]
+      additionalProperties: false                     # No other properties allowed
+
+    ConversationSummary:
+      description: 'A group or private chat as drawn in the chats list'
+      oneOf:
+        - $ref: '#/components/schemas/GroupSummary'
+        - $ref: '#/components/schemas/PrivateChatSummary'
+
+    ConversationsResponse:
+      description: 'Object containing the list of conversations'
+      type: object
+      properties:
+        chats:
+          description: 'Page of the chats of the user, the most recently active first'
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationSummary'
+          minItems: 1                                 # An empty list is a 404
+          maxItems: 500                               # One page: the query is capped at 500 rows
+          uniqueItems: true                           # One row per chat: a membership cannot be held twice
+      required: [chats]
+      additionalProperties: false                     # No other properties allowed
+
+    ConversationDetail:
+      description: 'A group or private chat with its members and one page of its messages'
+      oneOf:
+        - $ref: '#/components/schemas/GroupDetail'
+        - $ref: '#/components/schemas/PrivateChatDetail'
+
+    ForwardMessageRequest:
+      description: 'Object containing the id of the message to forward'
+      type: object
+      properties:
+        messageId:
+          $ref: '#/components/schemas/MessageId'
+      required: [messageId]
+      additionalProperties: false
+
+    CommentsResponse:
+      description: 'Object containing the list of comments'
+      type: object
+      properties:
+        comments:
+          description: 'Comments in newest-insertion-first order'
+          type: array
+          items:
+            $ref: '#/components/schemas/Comment'
+          minItems: 1
+          maxItems: 100                               # At most one per chat member
+          uniqueItems: true
+      required: [comments]
+      additionalProperties: false
+
+    CommentMessageRequest:
+      description: 'Object containing the emoji of the comment'
+      type: object                                    # Not a Comment: id and user are readOnly,
+      properties:                                     # and the server knows both, so the client cannot send them
+        emoji:
+          $ref: '#/components/schemas/Emoji'
+      required: [emoji]
+      additionalProperties: false                     # no other properties are allowed by the contract
+
+    CreatePrivateChatRequest:
+      description: 'Object containing the target user'
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/UserId'
+      required: [id]
+
+    ChatIdResponse:
+      description: 'Object containing the chat id'
+      type: object
+      properties:
+        id:
+          $ref: '#/components/schemas/ChatId'
+      required: [id]
+      additionalProperties: false                     # No other properties allowed
+
+    CreateGroupData:
+      description: 'Group data in JSON format'
+      type: object
+      properties:
+        name:
+          $ref: '#/components/schemas/GroupName'
+        members:
+          description: |
+            List of the UserId of the other initial members of the group:
+            the creator is added by the server and never appears here,
+            asking for a group that already holds it is a bad request
+          type: array
+          items:
+            $ref: '#/components/schemas/UserId'
+          minItems: 1                                 # At least one member other than the creator
+          maxItems: 99                                # The whole group is 100, one place is the creator
+          uniqueItems: true                           # Each member can appear once in the members list
+      required: [name, members]
+
+    AddGroupMembersRequest:
+      description: 'Payload for new members'
+      type: object
+      properties:
+        members:
+          description: 'New member user ids'
+          type: array
+          items:
+            $ref: '#/components/schemas/UserId'
+          minItems: 0                                 # An empty list is a request that adds nobody
+          maxItems: 100                               # Better: group max size - group current size
+          uniqueItems: true                           # Each member can appear once in the members list
+
 
   securitySchemes:                                    # Authentication
     BearerAuth:
@@ -408,7 +560,7 @@ components:                                           # Reusable components
 
   parameters:
     ParamPhotoId:
-      name: photoId
+      name: photo_id
       description: 'Photo unique identifier'
       in: path
       schema:
@@ -424,7 +576,7 @@ components:                                           # Reusable components
       required: true
 
     ParamChatId:
-      name: chatId
+      name: chat_id
       description: 'Chat unique identifier'
       in: path
       schema:
@@ -432,7 +584,7 @@ components:                                           # Reusable components
       required: true
 
     ParamGroupId:                                     # Same id space as ParamChatId, one kind of chat less:
-      name: groupId                                   # under /groups the id must name a group, and a private chat is a 404
+      name: group_id                                  # under /groups the id must name a group, and a private chat is a 404
       description: 'Group unique identifier'
       in: path
       schema:
@@ -440,7 +592,7 @@ components:                                           # Reusable components
       required: true
 
     ParamMessageId:
-      name: messageId
+      name: message_id
       description: 'Message unique identifier'
       in: path
       schema:
@@ -534,12 +686,7 @@ paths:                                                # Rest endpoints
         content:
           application/json:
             schema:
-              description: 'Login payload'
-              type: object
-              properties:
-                username:
-                  $ref: '#/components/schemas/Username'
-              required: [username]
+              $ref: '#/components/schemas/LoginRequest'
         required: true
       responses:
         '200':
@@ -547,13 +694,7 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                description: 'Object containing the userId'
-                type: object
-                properties:
-                  id:
-                    $ref: '#/components/schemas/UserId'
-                required: [id]
-                additionalProperties: false           # No other properties allowed
+                $ref: '#/components/schemas/UserIdResponse'
               example:
                 id: '126a4180-65aa-42ec-a945-5fd21dec0538'
         '201':
@@ -561,13 +702,7 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                description: 'Object containing the userId'
-                type: object
-                properties:
-                  id:
-                    $ref: '#/components/schemas/UserId'
-                required: [id]
-                additionalProperties: false           # No other properties allowed
+                $ref: '#/components/schemas/UserIdResponse'
               example:
                 id: '126a4180-65aa-42ec-a945-5fd21dec0538'
         '400':
@@ -577,7 +712,7 @@ paths:                                                # Rest endpoints
 
 
   # Photo endpoints
-  /photos/{photoId}:
+  /photos/{photo_id}:
     get:
       operationId: 'getPhoto'
       description: |
@@ -633,18 +768,18 @@ paths:                                                # Rest endpoints
 
   # User endpoints
   /me/username:
-    patch:
+    put:
       operationId: 'setMyUserName'
       description: |
-        Updates the username of the authenticated user.
+        Replaces the username of the authenticated user.
         A username belongs to one user only:
         asking for one that is already taken is a bad request, not a conflict.
-      summary: 'Update a user username'
+      summary: 'Replace a user username'
       tags: ['User']
       requestBody:
         description: 'User new username'
         content:
-          application/merge-patch+json:
+          application/json:
             schema:
               description: 'Object containing the new username'
               type: object
@@ -673,10 +808,10 @@ paths:                                                # Rest endpoints
           $ref: '#/components/responses/InternalServerError'
 
   /me/photo:
-    patch:
+    put:
       operationId: 'setMyPhoto'
-      description: 'Updates the profile picture of the authenticated user via multipart upload.'
-      summary: 'Update a user photo'
+      description: 'Replaces the profile picture of the authenticated user via multipart upload.'
+      summary: 'Replace a user photo'
       tags: ['User']
       requestBody:
         description: 'User new photo'
@@ -724,19 +859,7 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                description: 'Object containing the list of users'
-                type: object
-                properties:
-                  users:
-                    description: 'List of the matching users'
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/User'
-                    minItems: 1                       # An empty list is a 404
-                    maxItems: 20                      # The query is capped at 20 rows
-                    uniqueItems: true                 # A username belongs to one user only
-                required: [users]
-                additionalProperties: false           # No other properties allowed
+                $ref: '#/components/schemas/UsersResponse'
               example:
                 users:
                   - id: '126a4180-65aa-42ec-a945-5fd21dec0538'
@@ -775,21 +898,7 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                description: 'Object containing the list of conversations'
-                type: object
-                properties:
-                  chats:
-                    description: 'Page of the chats of the user, the most recently active first'
-                    type: array
-                    items:
-                      oneOf:                              # hats without full messages list
-                        - $ref: '#/components/schemas/GroupSummary'
-                        - $ref: '#/components/schemas/PrivateChatSummary'
-                    minItems: 1                           # An empty list is a 404
-                    maxItems: 500                         # One page: the query is capped at 500 rows
-                    uniqueItems: true                     # One row per chat: a membership cannot be held twice
-                required: [chats]
-                additionalProperties: false               # No other properties allowed
+                $ref: '#/components/schemas/ConversationsResponse'
               example:
                 chats:
                   - id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
@@ -827,7 +936,7 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
         
-  /chats/{chatId}:
+  /chats/{chat_id}:
     get:
       operationId: 'getConversation'
       description: |
@@ -853,10 +962,7 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                description: 'The chat, its members and one page of its messages'
-                oneOf:                                # The two kinds carry the same shape, narrowed each its own way
-                  - $ref: '#/components/schemas/GroupDetail'
-                  - $ref: '#/components/schemas/PrivateChatDetail'
+                $ref: '#/components/schemas/ConversationDetail'
               example:
                 id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
                 chatType: 'private'
@@ -895,12 +1001,12 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /chats/{chatId}/messages:
+  /chats/{chat_id}/messages:
     post:
       operationId: 'sendMessage'
       description: |
         Writes a message in a chat the authenticated user is a member of.
-        Both kinds (private chat and group) are written here, as they are read under /chats/{chatId}.
+        Both kinds (private chat and group) are written here, as they are read under /chats/{chat_id}.
         A message carries text, a photo, or both, so the file part is optional,
         and a text of spaces alone counts as no text: a message that would carry neither is a bad request.
         Sending catches the sender up with the chat, since writing in it means having seen what is above.
@@ -950,7 +1056,7 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /chats/{chatId}/messages/forwards:
+  /chats/{chat_id}/forwards:
     post:
       operationId: 'forwardMessage'
       description: |
@@ -971,13 +1077,7 @@ paths:                                                # Rest endpoints
         content:
           application/json:
             schema:
-              description: 'Object containing the ID of the message to forward'
-              type: object
-              additionalProperties: false
-              properties:
-                messageId:
-                  $ref: '#/components/schemas/MessageId'
-              required: [messageId]
+              $ref: '#/components/schemas/ForwardMessageRequest'
         required: true
       responses:
         '201':
@@ -1005,7 +1105,7 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /chats/{chatId}/messages/{messageId}/comments:
+  /chats/{chat_id}/messages/{message_id}/comments:
     get:
       operationId: 'getMessageComments'
       description: |
@@ -1028,19 +1128,7 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                description: 'Object containing the list of comments'
-                type: object
-                additionalProperties: false
-                properties:
-                  comments:
-                    description: 'Comments in newest-insertion-first order'
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Comment'
-                    minItems: 1
-                    maxItems: 100                     # At most one per chat member
-                    uniqueItems: true
-                required: [comments]
+                $ref: '#/components/schemas/CommentsResponse'
               example:
                 comments:
                   - id: 'c52a4180-65aa-42ec-a945-5fd21dec0538'
@@ -1049,7 +1137,7 @@ paths:                                                # Rest endpoints
                   - id: 'd63b4180-65aa-42ec-a945-5fd21dec0538'
                     emoji: '😂'           
                     user: '1a6a4180-65aa-42ec-a945-5fd21dec0538'
-        '400':                                        # Invalid chatId or messageId
+        '400':                                        # Invalid chat_id or message_id
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1060,7 +1148,7 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /chats/{chatId}/messages/{messageId}/comments/me: # current user unique comment
+  /chats/{chat_id}/messages/{message_id}/comments/me: # current user unique comment
     parameters:
       - $ref: '#/components/parameters/ParamChatId'
       - $ref: '#/components/parameters/ParamMessageId'
@@ -1080,13 +1168,7 @@ paths:                                                # Rest endpoints
         content:
           application/json:
             schema:
-              description: 'Object containing the emoji of the comment'
-              type: object                            # not a Comment: id and user are readOnly,
-              additionalProperties: false             # No other properties allowed by the contract
-              properties:                             # the server knows both and the client cannot send them
-                emoji:
-                  $ref: '#/components/schemas/Emoji'
-              required: [emoji]
+              $ref: '#/components/schemas/CommentMessageRequest'
         required: true
       responses:
         '200':
@@ -1146,7 +1228,7 @@ paths:                                                # Rest endpoints
       responses:
         '204':
           $ref: '#/components/responses/NoContent'
-        '400':                                        # Invalid chatId or messageId
+        '400':                                        # Invalid chat_id or message_id
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1157,7 +1239,7 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
   
-  /chats/{chatId}/messages/{messageId}:
+  /chats/{chat_id}/messages/{message_id}:
     delete:
       operationId: 'deleteMessage'
       description: |
@@ -1175,7 +1257,7 @@ paths:                                                # Rest endpoints
       responses:
         '204':
           $ref: '#/components/responses/NoContent'
-        '400':                                        # Invalid chatId or messageId
+        '400':                                        # Invalid chat_id or message_id
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1187,7 +1269,7 @@ paths:                                                # Rest endpoints
           $ref: '#/components/responses/InternalServerError'
 
   # Private chat endpoints
-  /private-chats:
+  /private_chats:
     post:
       operationId: 'createPrivateChat'
       description: |
@@ -1202,12 +1284,7 @@ paths:                                                # Rest endpoints
         content:
           application/json:
             schema:
-              description: 'Object containing the target user'
-              type: object
-              properties:
-                id:
-                  $ref: '#/components/schemas/UserId'
-              required: [id]
+              $ref: '#/components/schemas/CreatePrivateChatRequest'
         required: true
       responses:
         '200':
@@ -1215,13 +1292,7 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                description: 'Object containing the chatId'
-                type: object
-                properties:
-                  id:
-                    $ref: '#/components/schemas/ChatId'
-                required: [id]
-                additionalProperties: false           # No other properties allowed
+                $ref: '#/components/schemas/ChatIdResponse'
               example:
                 id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
         '201':
@@ -1229,13 +1300,7 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                description: 'Object containing the chatId'
-                type: object
-                properties:
-                  id:
-                    $ref: '#/components/schemas/ChatId'
-                required: [id]
-                additionalProperties: false           # No other properties allowed
+                $ref: '#/components/schemas/ChatIdResponse'
               example:
                 id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
         '400':                                        # E.g. you cannot create a private chat with yourself
@@ -1267,23 +1332,7 @@ paths:                                                # Rest endpoints
               type: object
               properties:
                 data:
-                  description: 'Group data in JSON format'
-                  type: object
-                  properties:
-                    name:
-                      $ref: '#/components/schemas/GroupName'
-                    members:
-                      description: |
-                        List of the UserId of the other initial members of the group:
-                        the creator is added by the server and never appears here,
-                        asking for a group that already holds it is a bad request
-                      type: array
-                      items:
-                        $ref: '#/components/schemas/UserId'
-                      minItems: 1                     # At least one member other than the creator
-                      maxItems: 99                    # The whole group is 100, one place is the creator
-                      uniqueItems: true               # Ensure that each member could be once in the members list
-                  required: [name, members]
+                  $ref: '#/components/schemas/CreateGroupData'
                 photoFile:
                   $ref: '#/components/schemas/Photo'
               required: [data, photoFile]
@@ -1297,13 +1346,7 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                description: 'Object containing the chatId'
-                type: object
-                properties:
-                  id:
-                    $ref: '#/components/schemas/ChatId'
-                required: [id]
-                additionalProperties: false           # No other properties allowed
+                $ref: '#/components/schemas/ChatIdResponse'
               example:
                 id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
         '400':
@@ -1315,21 +1358,21 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
   
-  /groups/{groupId}/name:
-    patch:
+  /groups/{group_id}/name:
+    put:
       operationId: 'setGroupName'
       description: |
-        Updates the name of a group the authenticated user is a member of.
+        Replaces the name of a group the authenticated user is a member of.
         A private chat borrows its name from the other member and owns none to update,
         so its id names nothing under this collection and is a 404 here.
-      summary: 'Update group name'
+      summary: 'Replace group name'
       tags: ['Group']
       parameters:
         - $ref: '#/components/parameters/ParamGroupId'
       requestBody:
         description: 'New group name'
         content:
-          application/merge-patch+json:
+          application/json:
             schema:
               description: 'Object containing the new group name'
               type: object
@@ -1362,15 +1405,15 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
   
-  /groups/{groupId}/photo:
-    patch:
+  /groups/{group_id}/photo:
+    put:
       operationId: 'setGroupPhoto'
       description: |
-        Updates the picture of a group the authenticated user is a member of via multipart upload.
+        Replaces the picture of a group the authenticated user is a member of via multipart upload.
         A private chat borrows its photo from the other member and owns none to update,
         so its id names nothing under this collection and is a 404 here.
         The replaced photo is dropped once no row points at it any more.
-      summary: 'Update group photo'
+      summary: 'Replace group photo'
       tags: ['Group']
       parameters:
         - $ref: '#/components/parameters/ParamGroupId'
@@ -1409,7 +1452,7 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /groups/{groupId}/members:
+  /groups/{group_id}/members:
     post:
       operationId: 'addToGroup'
       description: |
@@ -1427,17 +1470,7 @@ paths:                                                # Rest endpoints
         content:
           application/json:
             schema:
-              description: 'Payload for new members'
-              type: object
-              properties:
-                members:
-                  description: 'New members userId'
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/UserId'
-                  minItems: 0                             # An empty list is a request that adds nobody
-                  maxItems: 100                           # Better: group max size - group current size
-                  uniqueItems: true                       # Ensure that each member could be once in the members list
+              $ref: '#/components/schemas/AddGroupMembersRequest'
         required: true
       responses:
         '200':
@@ -1463,13 +1496,15 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /groups/{groupId}/members/me:
+  /groups/{group_id}/members/me:
     delete:
       operationId: 'leaveGroup'
       description: |
         Removes the authenticated user from a group it is a member of.
         A member removes itself, and removing anybody else is not allowed.
         A group nobody belongs to can never be reached again, so the last member out drops it, and its messages go with it.
+        The group photo and the photos of those messages are then removed only when no resource outside the deleted group
+        still references them; for example, a forwarded message in another chat keeps its shared photo available.
         No group is ever left standing with nobody inside.
         The call answers with no body: what it removes is one membership, whose whole content is
         the group of the path and the caller of the token, so there is nothing to send back.

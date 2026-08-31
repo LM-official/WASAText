@@ -30,7 +30,7 @@ C=$(body POST /session -H 'Content-Type: application/json' -d "{\"username\":\"c
 D=$(body POST /session -H 'Content-Type: application/json' -d "{\"username\":\"dave\"}" | id)
 AU="Authorization: Bearer $A"; BU="Authorization: Bearer $B"
 CU="Authorization: Bearer $C"; DU="Authorization: Bearer $D"
-JS='Content-Type: application/json'; MP='Content-Type: application/merge-patch+json'
+JS='Content-Type: application/json'
 
 echo "### 0. authentication"
 eq "0 no header"        401 "$(code GET /users?username=alice)"
@@ -64,15 +64,15 @@ PUNK="{\"username\":\"new\",\"admin\":true}"
 eq "1 unknown field" 200 "$(code POST /session -H "$JS" -d "$PUNK")"
 
 echo "### 2. setMyUserName"
-eq "2 free username" 200 "$(code PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"alice_new\"}")"
+eq "2 free username" 200 "$(code PUT /me/username -H "$AU" -H "$JS" -d "{\"username\":\"alice_new\"}")"
 has "2 body" "\"id\":\"$A\",\"username\":\"alice_new\",\"photo\":\"/photos/00000000-0000-4000-8000-000000000000\"" \
-     "$(body PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"alice_new\"}")"
-eq "2 idempotent"    200 "$(code PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"alice_new\"}")"
-eq "2 taken"         400 "$(code PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"bob\"}")"
-has "2 taken body"   '"message":"username already taken"' "$(body PATCH /me/username -H "$AU" -H "$MP" -d "{\"username\":\"bob\"}")"
-eq "2 invalid"       400 "$(code PATCH /me/username -H "$AU" -H "$MP" -d '{"username":"a b"}')"
-eq "2 plain json ct" 200 "$(code PATCH /me/username -H "$AU" -H "$JS" -d "{\"username\":\"alice_new\"}")"
-eq "2 no token"      401 "$(code PATCH /me/username -H "$MP" -d '{"username":"x"}')"
+     "$(body PUT /me/username -H "$AU" -H "$JS" -d "{\"username\":\"alice_new\"}")"
+eq "2 idempotent"    200 "$(code PUT /me/username -H "$AU" -H "$JS" -d "{\"username\":\"alice_new\"}")"
+eq "2 taken"         400 "$(code PUT /me/username -H "$AU" -H "$JS" -d "{\"username\":\"bob\"}")"
+has "2 taken body"   '"message":"username already taken"' "$(body PUT /me/username -H "$AU" -H "$JS" -d "{\"username\":\"bob\"}")"
+eq "2 invalid"       400 "$(code PUT /me/username -H "$AU" -H "$JS" -d '{"username":"a b"}')"
+eq "2 json content type" 200 "$(code PUT /me/username -H "$AU" -H "$JS" -d "{\"username\":\"alice_new\"}")"
+eq "2 no token"      401 "$(code PUT /me/username -H "$JS" -d '{"username":"x"}')"
 
 echo "### 3. getUsers"
 eq "3 match"      200 "$(code GET "/users?username=alice_new" -H "$AU")"
@@ -91,29 +91,29 @@ eq "3 LIMIT 20" 20 "$(body GET "/users?username=fill" -H "$AU" | grep -o '"id"' 
 
 echo "### 4. setMyPhoto"
 BEFORE=$(ls db/photos | wc -l | tr -d ' ')
-eq "4 png"          200 "$(code PATCH /me/photo -H "$AU" -F "photoFile=@$PNG")"
-P1=$(body PATCH /me/photo -H "$AU" -F "photoFile=@$PNG" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
-P2=$(body PATCH /me/photo -H "$AU" -F "photoFile=@$PNG" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
+eq "4 png"          200 "$(code PUT /me/photo -H "$AU" -F "photoFile=@$PNG")"
+P1=$(body PUT /me/photo -H "$AU" -F "photoFile=@$PNG" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
+P2=$(body PUT /me/photo -H "$AU" -F "photoFile=@$PNG" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
 if [ "$P1" != "$P2" ]; then ok; else no "4 new upload new id" "$P1 == $P2"; fi
 if [ ! -f "db/photos/$P1" ]; then ok; else no "4 replaced photo collected" "db/photos/$P1 still there"; fi
 if [ -f "db/photos/00000000-0000-4000-8000-000000000000" ]; then ok; else no "4 default photo kept" "gone"; fi
 N=$(ls db/photos | wc -l | tr -d ' ')
-eq "4 wrong field"   400 "$(code PATCH /me/photo -H "$AU" -F "file=@$PNG")"
-has "4 wrong field body" '"message":"missing photoFile field"' "$(body PATCH /me/photo -H "$AU" -F "file=@$PNG")"
-eq "4 not an image"  400 "$(code PATCH /me/photo -H "$AU" -F "photoFile=@/tmp/text.txt")"
-has "4 not an image body" '"message":"invalid photo"' "$(body PATCH /me/photo -H "$AU" -F "photoFile=@/tmp/text.txt")"
-eq "4 empty file"    400 "$(code PATCH /me/photo -H "$AU" -F "photoFile=@/tmp/empty.png")"
-eq "4 not multipart" 400 "$(code PATCH /me/photo -H "$AU" -H "$JS" -d '{"photoFile":"x"}')"
-has "4 not multipart body" '"message":"invalid multipart body"' "$(body PATCH /me/photo -H "$AU" -H "$JS" -d '{"photoFile":"x"}')"
+eq "4 wrong field"   400 "$(code PUT /me/photo -H "$AU" -F "file=@$PNG")"
+has "4 wrong field body" '"message":"missing photoFile field"' "$(body PUT /me/photo -H "$AU" -F "file=@$PNG")"
+eq "4 not an image"  400 "$(code PUT /me/photo -H "$AU" -F "photoFile=@/tmp/text.txt")"
+has "4 not an image body" '"message":"invalid photo"' "$(body PUT /me/photo -H "$AU" -F "photoFile=@/tmp/text.txt")"
+eq "4 empty file"    400 "$(code PUT /me/photo -H "$AU" -F "photoFile=@/tmp/empty.png")"
+eq "4 not multipart" 400 "$(code PUT /me/photo -H "$AU" -H "$JS" -d '{"photoFile":"x"}')"
+has "4 not multipart body" '"message":"invalid multipart body"' "$(body PUT /me/photo -H "$AU" -H "$JS" -d '{"photoFile":"x"}')"
 eq "4 no leaked files" "$N" "$(ls db/photos | wc -l | tr -d ' ')"
 { printf '\x89PNG\r\n\x1a\n'; dd if=/dev/zero bs=512k count=61 2>/dev/null; } > /tmp/big.png
-eq "4 over MaxPhotoBytes" 400 "$(code PATCH /me/photo -H "$AU" -F "photoFile=@/tmp/big.png")"
-has "4 over MaxPhotoBytes body" '"message":"invalid photo"' "$(body PATCH /me/photo -H "$AU" -F "photoFile=@/tmp/big.png")"
+eq "4 over MaxPhotoBytes" 400 "$(code PUT /me/photo -H "$AU" -F "photoFile=@/tmp/big.png")"
+has "4 over MaxPhotoBytes body" '"message":"invalid photo"' "$(body PUT /me/photo -H "$AU" -F "photoFile=@/tmp/big.png")"
 { printf '\x89PNG\r\n\x1a\n'; dd if=/dev/zero bs=1m count=33 2>/dev/null; } > /tmp/huge.png
-eq "4 over body limit" 400 "$(code PATCH /me/photo -H "$AU" -F "photoFile=@/tmp/huge.png")"
-has "4 over body limit body" '"message":"invalid multipart body"' "$(body PATCH /me/photo -H "$AU" -F "photoFile=@/tmp/huge.png")"
+eq "4 over body limit" 400 "$(code PUT /me/photo -H "$AU" -F "photoFile=@/tmp/huge.png")"
+has "4 over body limit body" '"message":"invalid multipart body"' "$(body PUT /me/photo -H "$AU" -F "photoFile=@/tmp/huge.png")"
 eq "4 still no leaks" "$N" "$(ls db/photos | wc -l | tr -d ' ')"
-eq "4 no token" 401 "$(code PATCH /me/photo -F "photoFile=@$PNG")"
+eq "4 no token" 401 "$(code PUT /me/photo -F "photoFile=@$PNG")"
 
 echo "### 5. getPhoto"
 DEF=00000000-0000-4000-8000-000000000000
@@ -132,17 +132,17 @@ eq "5 no token"   401 "$(code GET /photos/$DEF)"
 eq "5 range"      206 "$(code GET /photos/$DEF -H "$AU" -H 'Range: bytes=0-9')"
 
 echo "### 6. createPrivateChat"
-eq "6 first time"  201 "$(code POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}")"
-P=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
-eq "6 again"       200 "$(code POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}")"
-eq "6 other side"  200 "$(code POST /private-chats -H "$BU" -H "$JS" -d "{\"id\":\"$A\"}")"
-eq "6 same chat"   "$P" "$(body POST /private-chats -H "$BU" -H "$JS" -d "{\"id\":\"$A\"}" | id)"
-eq "6 with self"   400 "$(code POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$A\"}")"
-has "6 with self body" '"message":"cannot open a private chat with yourself"' "$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$A\"}")"
-eq "6 unknown user" 404 "$(code POST /private-chats -H "$AU" -H "$JS" -d '{"id":"11111111-2222-4333-8444-555555555555"}')"
-has "6 unknown body" '"message":"the other user does not exist"' "$(body POST /private-chats -H "$AU" -H "$JS" -d '{"id":"11111111-2222-4333-8444-555555555555"}')"
-eq "6 not a uuid"  400 "$(code POST /private-chats -H "$AU" -H "$JS" -d '{"id":"not-a-uuid"}')"
-eq "6 empty body"  400 "$(code POST /private-chats -H "$AU" -H "$JS" -d '{}')"
+eq "6 first time"  201 "$(code POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}")"
+P=$(body POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
+eq "6 again"       200 "$(code POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}")"
+eq "6 other side"  200 "$(code POST /private_chats -H "$BU" -H "$JS" -d "{\"id\":\"$A\"}")"
+eq "6 same chat"   "$P" "$(body POST /private_chats -H "$BU" -H "$JS" -d "{\"id\":\"$A\"}" | id)"
+eq "6 with self"   400 "$(code POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$A\"}")"
+has "6 with self body" '"message":"cannot open a private chat with yourself"' "$(body POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$A\"}")"
+eq "6 unknown user" 404 "$(code POST /private_chats -H "$AU" -H "$JS" -d '{"id":"11111111-2222-4333-8444-555555555555"}')"
+has "6 unknown body" '"message":"the other user does not exist"' "$(body POST /private_chats -H "$AU" -H "$JS" -d '{"id":"11111111-2222-4333-8444-555555555555"}')"
+eq "6 not a uuid"  400 "$(code POST /private_chats -H "$AU" -H "$JS" -d '{"id":"not-a-uuid"}')"
+eq "6 empty body"  400 "$(code POST /private_chats -H "$AU" -H "$JS" -d '{}')"
 
 echo "### 7. createGroup"
 GBEFORE=$(ls db/photos | wc -l | tr -d ' ')
@@ -172,56 +172,56 @@ eq "7 no token"      401 "$(code POST /groups -F "data={\"name\":\"X\",\"members
 echo "### 8. setGroupName  (reply: GroupChat)"
 G=$(body POST /groups -H "$AU" -F "data={\"name\":\"Study \",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
 GPHOTO=$(sqlite3 db/wasatext.db "SELECT photoId FROM chats WHERE id='$G';")
-NB=$(body PATCH /groups/$G/name -H "$AU" -H "$MP" -d '{"name":"CS Study Group"}')
-eq  "8 member renames"   200 "$(code PATCH /groups/$G/name -H "$AU" -H "$MP" -d '{"name":"CS Study Group"}')"
+NB=$(body PUT /groups/$G/name -H "$AU" -H "$JS" -d '{"name":"CS Study Group"}')
+eq  "8 member renames"   200 "$(code PUT /groups/$G/name -H "$AU" -H "$JS" -d '{"name":"CS Study Group"}')"
 eq  "8 exact body"       "{\"id\":\"$G\",\"chatType\":\"group\",\"name\":\"CS Study Group\",\"photo\":\"/photos/$GPHOTO\"}" "$NB"
 hasnt "8 no snippet key" 'snippet' "$NB"
 hasnt "8 no members key" 'members' "$NB"
-eq  "8 other member"     200 "$(code PATCH /groups/$G/name -H "$BU" -H "$MP" -d '{"name":"CS Study Group"}')"
-eq  "8 100 chars"        200 "$(code PATCH /groups/$G/name -H "$AU" -H "$MP" -d "{\"name\":\"$(printf 'z%.0s' $(seq 100))\"}")"
-eq  "8 emoji name"       200 "$(code PATCH /groups/$G/name -H "$AU" -H "$MP" -d '{"name":"👨‍👩‍👧‍👦"}')"
-eq  "8 not a member"     403 "$(code PATCH /groups/$G/name -H "$CU" -H "$MP" -d '{"name":"Hijacked"}')"
-has "8 403 body"         '"message":"not a member of the group"' "$(body PATCH /groups/$G/name -H "$CU" -H "$MP" -d '{"name":"Hijacked"}')"
-eq  "8 unknown group"    404 "$(code PATCH /groups/11111111-2222-4333-8444-555555555555/name -H "$AU" -H "$MP" -d '{"name":"x"}')"
-has "8 404 body"         '"message":"group not found"' "$(body PATCH /groups/11111111-2222-4333-8444-555555555555/name -H "$AU" -H "$MP" -d '{"name":"x"}')"
-eq  "8 private chat id"  404 "$(code PATCH /groups/$P/name -H "$AU" -H "$MP" -d '{"name":"x"}')"
-eq  "8 not a uuid"       400 "$(code PATCH /groups/not-a-uuid/name -H "$AU" -H "$MP" -d '{"name":"x"}')"
-has "8 bad id body"      '"message":"invalid group id"' "$(body PATCH /groups/not-a-uuid/name -H "$AU" -H "$MP" -d '{"name":"x"}')"
-eq  "8 empty name"       400 "$(code PATCH /groups/$G/name -H "$AU" -H "$MP" -d '{"name":""}')"
-eq  "8 spaces name"      400 "$(code PATCH /groups/$G/name -H "$AU" -H "$MP" -d '{"name":"   "}')"
-eq  "8 101 chars"        400 "$(code PATCH /groups/$G/name -H "$AU" -H "$MP" -d "{\"name\":\"$(printf 'z%.0s' $(seq 101))\"}")"
+eq  "8 other member"     200 "$(code PUT /groups/$G/name -H "$BU" -H "$JS" -d '{"name":"CS Study Group"}')"
+eq  "8 100 chars"        200 "$(code PUT /groups/$G/name -H "$AU" -H "$JS" -d "{\"name\":\"$(printf 'z%.0s' $(seq 100))\"}")"
+eq  "8 emoji name"       200 "$(code PUT /groups/$G/name -H "$AU" -H "$JS" -d '{"name":"👨‍👩‍👧‍👦"}')"
+eq  "8 not a member"     403 "$(code PUT /groups/$G/name -H "$CU" -H "$JS" -d '{"name":"Hijacked"}')"
+has "8 403 body"         '"message":"not a member of the group"' "$(body PUT /groups/$G/name -H "$CU" -H "$JS" -d '{"name":"Hijacked"}')"
+eq  "8 unknown group"    404 "$(code PUT /groups/11111111-2222-4333-8444-555555555555/name -H "$AU" -H "$JS" -d '{"name":"x"}')"
+has "8 404 body"         '"message":"group not found"' "$(body PUT /groups/11111111-2222-4333-8444-555555555555/name -H "$AU" -H "$JS" -d '{"name":"x"}')"
+eq  "8 private chat id"  404 "$(code PUT /groups/$P/name -H "$AU" -H "$JS" -d '{"name":"x"}')"
+eq  "8 not a uuid"       400 "$(code PUT /groups/not-a-uuid/name -H "$AU" -H "$JS" -d '{"name":"x"}')"
+has "8 bad id body"      '"message":"invalid group id"' "$(body PUT /groups/not-a-uuid/name -H "$AU" -H "$JS" -d '{"name":"x"}')"
+eq  "8 empty name"       400 "$(code PUT /groups/$G/name -H "$AU" -H "$JS" -d '{"name":""}')"
+eq  "8 spaces name"      400 "$(code PUT /groups/$G/name -H "$AU" -H "$JS" -d '{"name":"   "}')"
+eq  "8 101 chars"        400 "$(code PUT /groups/$G/name -H "$AU" -H "$JS" -d "{\"name\":\"$(printf 'z%.0s' $(seq 101))\"}")"
 eq  "8 GET on path"      405 "$(code GET /groups/$G/name -H "$AU")"
-eq  "8 no token"         401 "$(code PATCH /groups/$G/name -H "$MP" -d '{"name":"x"}')"
-body PATCH /groups/$G/name -H "$AU" -H "$MP" -d '{"name":"Kept Name"}' > /dev/null
-body PATCH /groups/$G/name -H "$CU" -H "$MP" -d '{"name":"Hijacked"}' > /dev/null
+eq  "8 no token"         401 "$(code PUT /groups/$G/name -H "$JS" -d '{"name":"x"}')"
+body PUT /groups/$G/name -H "$AU" -H "$JS" -d '{"name":"Kept Name"}' > /dev/null
+body PUT /groups/$G/name -H "$CU" -H "$JS" -d '{"name":"Hijacked"}' > /dev/null
 eq  "8 403 writes nothing" "Kept Name" "$(sqlite3 db/wasatext.db "SELECT name FROM chats WHERE id='$G';")"
 eq  "8 private chat untouched" "NULL|NULL" "$(sqlite3 db/wasatext.db "SELECT quote(name), quote(photoId) FROM chats WHERE id='$P';" | tr -d ' ')"
 
 echo "### 9. setGroupPhoto  (reply: GroupChat)"
-PB=$(body PATCH /groups/$G/photo -H "$AU" -F "photoFile=@$PNG")
-eq  "9 member uploads"   200 "$(code PATCH /groups/$G/photo -H "$AU" -F "photoFile=@$PNG")"
+PB=$(body PUT /groups/$G/photo -H "$AU" -F "photoFile=@$PNG")
+eq  "9 member uploads"   200 "$(code PUT /groups/$G/photo -H "$AU" -F "photoFile=@$PNG")"
 has "9 body id"          "\"id\":\"$G\",\"chatType\":\"group\",\"name\":\"Kept Name\",\"photo\":\"/photos/" "$PB"
 hasnt "9 no snippet key" 'snippet' "$PB"
 hasnt "9 no members key" 'members' "$PB"
-Q1=$(body PATCH /groups/$G/photo -H "$AU" -F "photoFile=@$PNG" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
-Q2=$(body PATCH /groups/$G/photo -H "$AU" -F "photoFile=@$PNG" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
+Q1=$(body PUT /groups/$G/photo -H "$AU" -F "photoFile=@$PNG" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
+Q2=$(body PUT /groups/$G/photo -H "$AU" -F "photoFile=@$PNG" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
 if [ "$Q1" != "$Q2" ]; then ok; else no "9 new upload new id" "$Q1 == $Q2"; fi
 if [ ! -f "db/photos/$Q1" ]; then ok; else no "9 replaced photo collected" "still there"; fi
-eq  "9 other member"     200 "$(code PATCH /groups/$G/photo -H "$BU" -F "photoFile=@$PNG")"
-eq  "9 wrong field"      400 "$(code PATCH /groups/$G/photo -H "$AU" -F "file=@$PNG")"
-eq  "9 not an image"     400 "$(code PATCH /groups/$G/photo -H "$AU" -F "photoFile=@/tmp/text.txt")"
-eq  "9 empty file"       400 "$(code PATCH /groups/$G/photo -H "$AU" -F "photoFile=@/tmp/empty.png")"
-eq  "9 not multipart"    400 "$(code PATCH /groups/$G/photo -H "$AU" -H "$JS" -d '{"photoFile":"x"}')"
+eq  "9 other member"     200 "$(code PUT /groups/$G/photo -H "$BU" -F "photoFile=@$PNG")"
+eq  "9 wrong field"      400 "$(code PUT /groups/$G/photo -H "$AU" -F "file=@$PNG")"
+eq  "9 not an image"     400 "$(code PUT /groups/$G/photo -H "$AU" -F "photoFile=@/tmp/text.txt")"
+eq  "9 empty file"       400 "$(code PUT /groups/$G/photo -H "$AU" -F "photoFile=@/tmp/empty.png")"
+eq  "9 not multipart"    400 "$(code PUT /groups/$G/photo -H "$AU" -H "$JS" -d '{"photoFile":"x"}')"
 PN=$(ls db/photos | wc -l | tr -d ' ')
 CUR=$(sqlite3 db/wasatext.db "SELECT photoId FROM chats WHERE id='$G';")
-eq  "9 not a member"     403 "$(code PATCH /groups/$G/photo -H "$CU" -F "photoFile=@$PNG")"
-eq  "9 unknown group"    404 "$(code PATCH /groups/11111111-2222-4333-8444-555555555555/photo -H "$AU" -F "photoFile=@$PNG")"
-eq  "9 private chat id"  404 "$(code PATCH /groups/$P/photo -H "$AU" -F "photoFile=@$PNG")"
+eq  "9 not a member"     403 "$(code PUT /groups/$G/photo -H "$CU" -F "photoFile=@$PNG")"
+eq  "9 unknown group"    404 "$(code PUT /groups/11111111-2222-4333-8444-555555555555/photo -H "$AU" -F "photoFile=@$PNG")"
+eq  "9 private chat id"  404 "$(code PUT /groups/$P/photo -H "$AU" -F "photoFile=@$PNG")"
 eq  "9 no leaked files"  "$PN" "$(ls db/photos | wc -l | tr -d ' ')"
 eq  "9 photo untouched"  "$CUR" "$(sqlite3 db/wasatext.db "SELECT photoId FROM chats WHERE id='$G';")"
-eq  "9 not a uuid"       400 "$(code PATCH /groups/not-a-uuid/photo -H "$AU" -F "photoFile=@$PNG")"
+eq  "9 not a uuid"       400 "$(code PUT /groups/not-a-uuid/photo -H "$AU" -F "photoFile=@$PNG")"
 eq  "9 GET on path"      405 "$(code GET /groups/$G/photo -H "$AU")"
-eq  "9 no token"         401 "$(code PATCH /groups/$G/photo -F "photoFile=@$PNG")"
+eq  "9 no token"         401 "$(code PUT /groups/$G/photo -F "photoFile=@$PNG")"
 
 echo "### 10. addToGroup  (reply: GroupWithMembers)"
 AB=$(body POST /groups/$G/members -H "$AU" -H "$JS" -d "{\"members\":[\"$C\"]}")
@@ -301,7 +301,7 @@ eq  "12 trailing slash" 404 "$(code GET /me/chats/ -H "$AU")"
 eq  "12 no token"      401 "$(code GET /me/chats)"
 # the borrow is live, and a group is never multiplied
 has "12 private chat named after the other" "alice_new" "$(body GET /me/chats -H "$BU")"
-body PATCH /me/username -H "$BU" -H "$MP" -d "{\"username\":\"bob_renamed\"}" > /dev/null
+body PUT /me/username -H "$BU" -H "$JS" -d "{\"username\":\"bob_renamed\"}" > /dev/null
 has "12 rename reaches the other list" "bob_renamed" "$(body GET /me/chats -H "$AU")"
 eq  "12 group appears once" 1 "$(body GET /me/chats -H "$AU" | grep -o "\"id\":\"$G\"" | wc -l | tr -d ' ')"
 # the snippet: the messages are the ones sendMessage writes (§14), not rows put in by hand
@@ -379,7 +379,7 @@ has "13 read on the group"           '"state":"read"' "$GC"
 has "13 received on the private chat" '"state":"received"' "$PC"
 has "13 a chat with no message answers an empty list" '"messages":[]' "$(body GET /chats/$GS -H "$AU")"
 # the one id that answers here and not under /groups/: both kinds are read through /chats/
-eq  "13 private chat id under /groups/" 404 "$(code PATCH /groups/$P/name -H "$AU" -H "$MP" -d '{"name":"x"}')"
+eq  "13 private chat id under /groups/" 404 "$(code PUT /groups/$P/name -H "$AU" -H "$JS" -d '{"name":"x"}')"
 eq  "13 private chat id under /chats/"  200 "$(code GET /chats/$P -H "$AU")"
 # one page: a chat answers at most schemas.ChatMessagesPageSize messages, whatever it holds
 GP=$(body POST /groups -H "$AU" -F "data={\"name\":\"Page \",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
@@ -524,8 +524,8 @@ if [ "$(RANK $GO)" -lt "$(RANK $GN)" ]; then ok; else no "14 and writing again m
 
 echo "### 15. forwardMessage  (reply: Message, 201)"
 # A member of both chats, B source-only, C destination-only, D neither — same fixture shape as §15 of endpoints.md
-PS=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
-PD=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$C\"}" | id)
+PS=$(body POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
+PD=$(body POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$C\"}" | id)
 SRC_TEXT=$(body POST /chats/$PS/messages -H "$BU" -F 'text=forward this text')
 MS=$(echo "$SRC_TEXT" | id)
 SRC_PHOTO=$(body POST /chats/$PS/messages -H "$BU" -F "photoFile=@$PNG")
@@ -538,7 +538,7 @@ SRC_ROW=$(sqlite3 db/wasatext.db "SELECT userId||'|'||text||'|'||quote(photoId)|
 PHOTOS15=$(ls db/photos | wc -l | tr -d ' ')
 
 FW_FILE=/tmp/wasatext-forward-response-$$.json
-FW_CODE=$(curl -s -o "$FW_FILE" -w '%{http_code}' -X POST "$H/chats/$PD/messages/forwards" \
+FW_CODE=$(curl -s -o "$FW_FILE" -w '%{http_code}' -X POST "$H/chats/$PD/forwards" \
   -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")
 FW=$(tr -d '\n' < "$FW_FILE")
 eq  "15 text-only source"        201 "$FW_CODE"
@@ -558,18 +558,18 @@ eq "15 sender caught up to the exact copy date" \
    "$(sqlite3 db/wasatext.db "SELECT date FROM messages WHERE id='$FWID';")" \
    "$(sqlite3 db/wasatext.db "SELECT lastReadDate FROM chat_members WHERE chatId='$PD' AND userId='$A';")"
 
-FWP=$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MPH\"}")
+FWP=$(body POST /chats/$PD/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MPH\"}")
 has   "15 exact photo URL copied"     "\"photo\":\"$MPHOTO\"" "$FWP"
 hasnt "15 no text key on photo-only" '"text"' "$FWP"
 
-FWB=$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MB\"}")
+FWB=$(body POST /chats/$PD/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MB\"}")
 has "15 both fields copied, text"  '"text":"both fields"' "$FWB"
 has "15 both fields copied, exact photo" "\"photo\":\"$MBPHOTO\"" "$FWB"
 eq  "15 forwarding creates no photo file" "$PHOTOS15" "$(ls db/photos | wc -l | tr -d ' ')"
 
 # comments belong to the source row and are not copied
 sqlite3 db/wasatext.db "INSERT INTO comments (id, messageId, userId, emoji) VALUES ('99999999-0000-4000-8000-000000000000', '$MS', '$B', '👍');"
-FWC=$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")
+FWC=$(body POST /chats/$PD/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")
 FWCID=$(echo "$FWC" | id)
 has "15 source comments are not copied" '"comments":[]' "$FWC"
 eq  "15 copied row owns no comment" 0 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$FWCID';")"
@@ -578,60 +578,60 @@ eq  "15 source message stays untouched" "$SRC_ROW" \
     "$(sqlite3 db/wasatext.db "SELECT userId||'|'||text||'|'||quote(photoId)||'|'||date FROM messages WHERE id='$MS';")"
 
 # forwarding into the source chat itself is allowed, and any chat kind is a valid destination
-eq "15 same-chat forward" 201 "$(code POST /chats/$PS/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
-eq "15 group destination"  201 "$(code POST /chats/$G/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq "15 same-chat forward" 201 "$(code POST /chats/$PS/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq "15 group destination"  201 "$(code POST /chats/$G/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
 # a destination with no other member has nobody to hold the copy at received
 GFS=$(body POST /groups -H "$AU" -F "data={\"name\":\"Forward Solo\",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
 code DELETE /groups/$GFS/members/me -H "$BU" > /dev/null
 has "15 alone in destination, born read" '"state":"read"' \
-    "$(body POST /chats/$GFS/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+    "$(body POST /chats/$GFS/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
 
 # who may forward, and between which chats
-eq  "15 belongs to source and destination" 201 "$(code POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 belongs to source and destination" 201 "$(code POST /chats/$PD/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
 REFUSED_BEFORE=$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM messages WHERE chatId='$PD')||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$PD' ORDER BY userId));")
-eq  "15 source-only member"      403 "$(code POST /chats/$PD/messages/forwards -H "$BU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
-eq  "15 destination-only member" 403 "$(code POST /chats/$PD/messages/forwards -H "$CU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
-eq  "15 belongs to neither"      403 "$(code POST /chats/$PD/messages/forwards -H "$DU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
-has "15 403 body" '"message":"not a member of the chat"' "$(body POST /chats/$PD/messages/forwards -H "$DU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 source-only member"      403 "$(code POST /chats/$PD/forwards -H "$BU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 destination-only member" 403 "$(code POST /chats/$PD/forwards -H "$CU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 belongs to neither"      403 "$(code POST /chats/$PD/forwards -H "$DU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+has "15 403 body" '"message":"not a member of the chat"' "$(body POST /chats/$PD/forwards -H "$DU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
 eq  "15 every 403 writes nothing" "$REFUSED_BEFORE" \
     "$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM messages WHERE chatId='$PD')||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$PD' ORDER BY userId));")"
 
 # not found: message before chat
 NOTFOUND_BEFORE=$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages;")
-eq  "15 unknown message"  404 "$(code POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d '{"messageId":"11111111-2222-4333-8444-555555555555"}')"
-has "15 message 404 body" '"message":"message not found"' "$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d '{"messageId":"11111111-2222-4333-8444-555555555555"}')"
-eq  "15 unknown chat"     404 "$(code POST /chats/11111111-2222-4333-8444-555555555555/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
-has "15 chat 404 body"    '"message":"chat not found"' "$(body POST /chats/11111111-2222-4333-8444-555555555555/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 unknown message"  404 "$(code POST /chats/$PD/forwards -H "$AU" -H "$JS" -d '{"messageId":"11111111-2222-4333-8444-555555555555"}')"
+has "15 message 404 body" '"message":"message not found"' "$(body POST /chats/$PD/forwards -H "$AU" -H "$JS" -d '{"messageId":"11111111-2222-4333-8444-555555555555"}')"
+eq  "15 unknown chat"     404 "$(code POST /chats/11111111-2222-4333-8444-555555555555/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+has "15 chat 404 body"    '"message":"chat not found"' "$(body POST /chats/11111111-2222-4333-8444-555555555555/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
 has "15 missing source wins over missing destination" '"message":"message not found"' \
-    "$(body POST /chats/11111111-2222-4333-8444-555555555555/messages/forwards -H "$AU" -H "$JS" -d '{"messageId":"22222222-2222-4222-8222-222222222222"}')"
+    "$(body POST /chats/11111111-2222-4333-8444-555555555555/forwards -H "$AU" -H "$JS" -d '{"messageId":"22222222-2222-4222-8222-222222222222"}')"
 eq  "15 every 404 writes no message" "$NOTFOUND_BEFORE" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages;")"
 
 # the body and the ids
-eq  "15 empty messageId"    400 "$(code POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d '{"messageId":""}')"
-eq  "15 missing messageId"  400 "$(code POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d '{}')"
-has "15 400 body"           '"message":"invalid request body"' "$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d '{}')"
-eq  "15 malformed body"     400 "$(code POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d '{')"
-eq  "15 uppercase messageId" 400 "$(code POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$(echo $MS | tr a-f A-F)\"}")"
-eq  "15 bad chat id"        400 "$(code POST /chats/not-a-uuid/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
-has "15 bad chat id body"   '"message":"invalid chat id"' "$(body POST /chats/not-a-uuid/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
-eq  "15 uppercase chat id"  400 "$(code POST /chats/$(echo $PD | tr a-f A-F)/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 empty messageId"    400 "$(code POST /chats/$PD/forwards -H "$AU" -H "$JS" -d '{"messageId":""}')"
+eq  "15 missing messageId"  400 "$(code POST /chats/$PD/forwards -H "$AU" -H "$JS" -d '{}')"
+has "15 400 body"           '"message":"invalid request body"' "$(body POST /chats/$PD/forwards -H "$AU" -H "$JS" -d '{}')"
+eq  "15 malformed body"     400 "$(code POST /chats/$PD/forwards -H "$AU" -H "$JS" -d '{')"
+eq  "15 uppercase messageId" 400 "$(code POST /chats/$PD/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$(echo $MS | tr a-f A-F)\"}")"
+eq  "15 bad chat id"        400 "$(code POST /chats/not-a-uuid/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+has "15 bad chat id body"   '"message":"invalid chat id"' "$(body POST /chats/not-a-uuid/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 uppercase chat id"  400 "$(code POST /chats/$(echo $PD | tr a-f A-F)/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
 has "15 bad destination id wins over malformed body" '"message":"invalid chat id"' \
-    "$(body POST /chats/not-a-uuid/messages/forwards -H "$AU" -H "$JS" -d '{')"
-EXTRA_CODE=$(curl -s -o "$FW_FILE" -w '%{http_code}' -X POST "$H/chats/$PD/messages/forwards" \
+    "$(body POST /chats/not-a-uuid/forwards -H "$AU" -H "$JS" -d '{')"
+EXTRA_CODE=$(curl -s -o "$FW_FILE" -w '%{http_code}' -X POST "$H/chats/$PD/forwards" \
   -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\",\"admin\":true}")
 EXTRA=$(tr -d '\n' < "$FW_FILE")
 eq  "15 unknown JSON field is ignored" 201 "$EXTRA_CODE"
 has "15 extra field still returns the copy" '"text":"forward this text"' "$EXTRA"
 
 # the destination cap is checked here too — GF is already full from §14
-eq  "15 destination full"  400 "$(code POST /chats/$GF/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
-has "15 full body"         '"message":"the chat is full"' "$(body POST /chats/$GF/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq  "15 destination full"  400 "$(code POST /chats/$GF/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+has "15 full body"         '"message":"the chat is full"' "$(body POST /chats/$GF/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
 eq  "15 and the refused one wrote no row" 10000 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE chatId='$GF';")"
 
 # router-level answers on this route
-eq "15 GET on the path" 405 "$(code GET /chats/$PD/messages/forwards -H "$AU")"
-eq "15 trailing slash"  404 "$(code POST /chats/$PD/messages/forwards/ -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
-eq "15 no token wins over malformed body" 401 "$(code POST /chats/$PD/messages/forwards -H "$JS" -d '{')"
+eq "15 GET on the path" 405 "$(code GET /chats/$PD/forwards -H "$AU")"
+eq "15 trailing slash"  404 "$(code POST /chats/$PD/forwards/ -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")"
+eq "15 no token wins over malformed body" 401 "$(code POST /chats/$PD/forwards -H "$JS" -d '{')"
 
 echo "### 16. commentMessage  (reply: updated Message, 201 create / 200 update)"
 # A, B and C share the target group; B writes the message and D is the outsider
@@ -937,7 +937,7 @@ eq "19 deletion never moves lastReadDate backwards" '2099-01-01T00:00:00.000Z' \
 DM_PHOTO_BODY=$(body POST /chats/$DMG/messages -H "$AU" -F "photoFile=@$PNG")
 DM_PHOTO=$(printf '%s' "$DM_PHOTO_BODY" | id)
 DM_PHOTO_ID=$(printf '%s' "$DM_PHOTO_BODY" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
-DM_FORWARD=$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$DM_PHOTO\"}" | id)
+DM_FORWARD=$(body POST /chats/$PD/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$DM_PHOTO\"}" | id)
 eq "19 shared photo has two references" 2 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE photoId='$DM_PHOTO_ID';")"
 eq "19 delete original photo message" 204 "$(code DELETE /chats/$DMG/messages/$DM_PHOTO -H "$AU")"
 eq "19 forwarded reference remains" 1 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE photoId='$DM_PHOTO_ID';")"
@@ -964,9 +964,9 @@ eq "20 unknown path"   404 "$(code GET /nope)"
 eq "20 wrong method"   405 "$(code GET /session)"
 eq "20 trailing slash" 404 "$(code GET /users/ -H "$AU")"
 CORS=$(curl -s -D- -o /dev/null -X OPTIONS "$H/me/username" -H 'Origin: http://localhost:5173' \
-  -H 'Access-Control-Request-Method: PATCH' -H 'Access-Control-Request-Headers: authorization,content-type')
+  -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: authorization,content-type')
 has "20 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
-has "20 CORS allow method"  'Access-Control-Allow-Methods: PATCH' "$CORS"
+has "20 CORS allow method"  'Access-Control-Allow-Methods: PUT' "$CORS"
 has "20 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
 has "20 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
 

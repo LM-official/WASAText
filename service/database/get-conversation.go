@@ -127,7 +127,7 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 		var msgText, msgPhoto sql.NullString
 		var isRead bool
 		var message schemas.Message
-		
+
 		// Error reading a row: a shorter list would be a wrong answer, not a partial one
 		if err := messageRows.Scan(&message.Id, &message.User, &msgDate, &msgText, &msgPhoto, &isRead); err != nil {
 			return schemas.ChatDetail{}, fmt.Errorf("cannot read a message of the chat %q: %w", chatId, err)
@@ -207,9 +207,7 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	// The chat exists and the caller is a member, already checked above
 	// lastReadDate > prevents from breake time with manual set date, e.g. rollback the clock
 	now := globaltime.Format(globaltime.Now().UTC().Truncate(time.Millisecond))
-	_, err = tx.Exec(`UPDATE chat_members SET lastReadDate = ?
-					  WHERE chatId = ? AND userId = ? AND lastReadDate < ?;`,
-		now, chatId, userId, now)
+	err = advanceLastReadDate(tx, userId, chatId, now)
 	// Error updating the caller
 	if err != nil {
 		return schemas.ChatDetail{}, fmt.Errorf("cannot update the last read date of the caller: %w", err)

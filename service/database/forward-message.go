@@ -100,9 +100,7 @@ func (db *appdbimpl) ForwardMessage(userId schemas.UserId, chatId schemas.ChatId
 	// Writing in a chat means having seen what is above, so the sender is caught up to its own message
 	// The value is the date of the message itself
 	// The lastReadDate < guard prevents a clock rollback from moving the value backwards
-	_, err = tx.Exec(`UPDATE chat_members SET lastReadDate = ?
-					  WHERE chatId = ? AND userId = ? AND lastReadDate < ?;`,
-		dateText, chatId, userId, dateText)
+	err = advanceLastReadDate(tx, userId, chatId, dateText)
 	// Error updating the sender
 	if err != nil {
 		return schemas.Message{}, fmt.Errorf("cannot update the last read date of the sender: %w", err)
@@ -112,9 +110,7 @@ func (db *appdbimpl) ForwardMessage(userId schemas.UserId, chatId schemas.ChatId
 	// read once no member of the chat is left behind it
 	// It not always born "received": in a chat the sender is alone in,
 	// the update above already caught up the only member there is, so the message is born "read"
-	var isRead bool
-	err = tx.QueryRow(`SELECT NOT EXISTS (SELECT 1 FROM chat_members WHERE chatId = ? AND lastReadDate < ?);`,
-		chatId, dateText).Scan(&isRead)
+	state, err := readMessageState(tx, chatId, dateText)
 	// Error reading the state
 	if err != nil {
 		return schemas.Message{}, fmt.Errorf("cannot read the state of the message: %w", err)
@@ -129,7 +125,7 @@ func (db *appdbimpl) ForwardMessage(userId schemas.UserId, chatId schemas.ChatId
 			Id:    newId,
 			User:  userId,
 			Date:  date,
-			State: schemas.MessageStateReceived,
+			State: state,
 		},
 		Content: schemas.MessageContent{
 			Text: schemas.MessageText(srcText.String),
@@ -139,9 +135,5 @@ func (db *appdbimpl) ForwardMessage(userId schemas.UserId, chatId schemas.ChatId
 		// A message is born with no reaction, and the list is answered empty and never null
 		Comments: make(schemas.Comments, 0),
 	}
-	if isRead {
-		message.State = schemas.MessageStateRead
-	}
-
 	return message, nil
 }

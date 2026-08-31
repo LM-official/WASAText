@@ -1,8 +1,8 @@
 # WASAText — endpoint tests
-Manual tests for the endpoints registered in `service/api/api-handler.go`:
+Manual tests for the OpenAPI operations registered in `service/api/api-handler.go` (`GET /liveness` is the separate public service probe used by the seed):
 `doLogin`, `setMyUserName`, `setMyPhoto`, `getUsers`, `getMyConversations`, `getConversation`, `sendMessage`, `deleteMessage`, `forwardMessage`, `commentMessage`, `uncommentMessage`, `getMessageComments`, `getPhoto`, `createPrivateChat`, `createGroup`, `setGroupName`, `setGroupPhoto`, `addToGroup`, `leaveGroup`.
 
-Last full run: 2026-08-31, every implemented section below re-checked against a freshly built binary: 662 assertions, all green — 532 from §0–20 and 130 from the §21 scenarios. The invariants held afterwards — no chat without members, no private chat holding a name or a photo of its own, no group missing one, no membership pointing at a row that is gone, no comment pointing at a deleted message, and every referenced photo id present on disk with nothing left over.
+Last full run: 2026-09-01, every implemented section below re-checked against a freshly recreated database and freshly built binary: 662 assertions, all green — 532 from §0–20 and 130 from the §21 scenarios. The invariants held afterwards — no chat without members, no private chat holding a name or a photo of its own, no group missing one, no membership pointing at a row that is gone, and no comment pointing at a deleted message. Every referenced photo id had a file, no unreferenced file remained, and photos shared by forwarded messages correctly remained referenced.
 
 Two scripts run all of it, so a section does not have to be pasted by hand:
 ```shell
@@ -64,8 +64,10 @@ printf 'not an image' > /tmp/text.txt
 
 ---
 
-## 0. Authentication — every endpoint but `doLogin`
-`service/api/api-authenticate.go` runs before the handler, so these answers are the same on `/me/username`, `/me/photo`, `/me/chats`, `/chats/:chatId`, `/chats/:chatId/messages`, `/chats/:chatId/messages/:messageId`, `/chats/:chatId/messages/forwards`, `/chats/:chatId/messages/:messageId/comments`, `/chats/:chatId/messages/:messageId/comments/me`, `/users`, `/photos/:photoId`, `/private-chats`, `/groups`, `/groups/:groupId/name`, `/groups/:groupId/photo`, `/groups/:groupId/members` and `/groups/:groupId/members/me`, and nothing is read or written when they fire.
+## 0. Authentication — every documented operation but `doLogin`
+`GET /liveness` is also public, but it is the service probe rather than an OpenAPI operation.
+
+`service/api/api-authenticate.go` runs before the handler, so these answers are the same on `/me/username`, `/me/photo`, `/me/chats`, `/chats/:chatId`, `/chats/:chatId/messages`, `/chats/:chatId/messages/:messageId`, `/chats/:chatId/forwards`, `/chats/:chatId/messages/:messageId/comments`, `/chats/:chatId/messages/:messageId/comments/me`, `/users`, `/photos/:photoId`, `/private_chats`, `/groups`, `/groups/:groupId/name`, `/groups/:groupId/photo`, `/groups/:groupId/members` and `/groups/:groupId/members/me`, and nothing is read or written when they fire.
 
 | Authorization header | reply |
 |---|---|
@@ -107,10 +109,10 @@ The returned id is the bearer token of every other test: this is the only point 
 
 ---
 
-## 2. `setMyUserName` — `PATCH /me/username`
+## 2. `setMyUserName` — `PUT /me/username`
 ```shell
-curl -i -X PATCH localhost:3000/me/username \
-  -H "Authorization: Bearer $A" -H 'Content-Type: application/merge-patch+json' \
+curl -i -X PUT localhost:3000/me/username \
+  -H "Authorization: Bearer $A" -H 'Content-Type: application/json' \
   -d "{\"username\":\"alice_new\"}"
 ```
 
@@ -120,7 +122,6 @@ curl -i -X PATCH localhost:3000/me/username \
 | the username it already has | `200`, unchanged — updating a row to its own value is not a UNIQUE conflict |
 | `"bob"` (owned by B) | `400 {"code":400,"message":"username already taken"}`, nothing written |
 | `{"username":""}`, `{}`, `{"username":"a b"}`, 31 chars | `400 invalid request body` |
-| `Content-Type: application/json` | identical result — the handler never reads the header (§22) |
 | bad/absent token | §0, and the username is not touched |
 
 The `photo` field is a URL and never the stored id: `service/api/photo-url.go` is what turns one into the other. A user that never uploaded shows the default id.
@@ -161,9 +162,9 @@ curl -s "localhost:3000/users?username=lim" -H "Authorization: Bearer $A" | grep
 
 ---
 
-## 4. `setMyPhoto` — `PATCH /me/photo` (multipart)
+## 4. `setMyPhoto` — `PUT /me/photo` (multipart)
 ```shell
-curl -i -X PATCH localhost:3000/me/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG"
+curl -i -X PUT localhost:3000/me/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG"
 ```
 
 | case | reply |
@@ -179,11 +180,11 @@ curl -i -X PATCH localhost:3000/me/photo -H "Authorization: Bearer $A" -F "photo
 The two size guards (`MaxPhotoBytes` = 31457280, body limit = that + 1 MiB = 32505856):
 ```shell
 { printf '\x89PNG\r\n\x1a\n'; dd if=/dev/zero bs=512k count=61 2>/dev/null; } > /tmp/big.png   # 30.5 MiB
-curl -i -X PATCH localhost:3000/me/photo -H "Authorization: Bearer $A" -F "photoFile=@/tmp/big.png"
+curl -i -X PUT localhost:3000/me/photo -H "Authorization: Bearer $A" -F "photoFile=@/tmp/big.png"
 # -> 400 invalid photo          (over MaxPhotoBytes, caught by photos.Save reading limit+1)
 
 { printf '\x89PNG\r\n\x1a\n'; dd if=/dev/zero bs=1m count=33 2>/dev/null; } > /tmp/huge.png    # 33 MiB
-curl -i -X PATCH localhost:3000/me/photo -H "Authorization: Bearer $A" -F "photoFile=@/tmp/huge.png"
+curl -i -X PUT localhost:3000/me/photo -H "Authorization: Bearer $A" -F "photoFile=@/tmp/huge.png"
 # -> 400 invalid multipart body (over the body limit, caught by MaxBytesReader before the parser)
 ```
 
@@ -194,8 +195,8 @@ ls db/photos | wc -l    # before and after each 400 above: same number
 
 Garbage collection. Upload twice and the first file is gone, because nothing points at it any more; the default photo is never deleted even when no user shows it:
 ```shell
-P1=$(curl -s -X PATCH localhost:3000/me/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
-curl -s -X PATCH localhost:3000/me/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG" > /dev/null
+P1=$(curl -s -X PUT localhost:3000/me/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
+curl -s -X PUT localhost:3000/me/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG" > /dev/null
 ls db/photos/$P1                                    # -> No such file
 ls db/photos/00000000-0000-4000-8000-000000000000   # -> still there
 ```
@@ -225,9 +226,9 @@ The type is the one detected from the bytes: a file renamed `.png` that is reall
 
 ---
 
-## 6. `createPrivateChat` — `POST /private-chats`
+## 6. `createPrivateChat` — `POST /private_chats`
 ```shell
-curl -i -X POST localhost:3000/private-chats -H "Authorization: Bearer $A" \
+curl -i -X POST localhost:3000/private_chats -H "Authorization: Bearer $A" \
   -H 'Content-Type: application/json' -d "{\"id\":\"$B\"}"
 ```
 
@@ -271,15 +272,15 @@ Order of the checks. The photo is read only after the data part and the members 
 
 ---
 
-## 8. `setGroupName` — `PATCH /groups/{groupId}/name`
+## 8. `setGroupName` — `PUT /groups/{groupId}/name`
 Two more fixtures: a group to rename, and a user who is not one of its members.
 ```shell
 C=$(curl -s -X POST localhost:3000/session -H 'Content-Type: application/json' -d "{\"username\":\"carl\"}" | id)
 G=$(curl -s -X POST localhost:3000/groups -H "Authorization: Bearer $A" \
   -F "data={\"name\":\"Study \",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
 
-curl -i -X PATCH localhost:3000/groups/$G/name \
-  -H "Authorization: Bearer $A" -H 'Content-Type: application/merge-patch+json' \
+curl -i -X PUT localhost:3000/groups/$G/name \
+  -H "Authorization: Bearer $A" -H 'Content-Type: application/json' \
   -d '{"name":"CS Study Group"}'
 ```
 
@@ -296,7 +297,6 @@ curl -i -X PATCH localhost:3000/groups/$G/name \
 | `/groups/not-a-uuid/name`, or the uppercase UUID | `400 {"code":400,"message":"invalid group id"}` |
 | `{"name":""}`, `{"name":"   "}`, `{}`, `{"name":null}`, 101 chars | `400 invalid request body` |
 | malformed or empty body | `400 invalid request body` |
-| `Content-Type: application/json` | identical result — the handler never reads the header (§22) |
 | `{"name":"x","admin":true}` | `200` — unknown fields are ignored (§22) |
 | `GET` / `POST` on the same path | `405 Method Not Allowed` (§20) |
 | bad/absent token | §0, and the name is not touched |
@@ -309,8 +309,8 @@ The `chatType` is not read back from the row. It is a condition of the write, so
 
 Nothing is written when a call is refused:
 ```shell
-curl -s -X PATCH localhost:3000/groups/$G/name -H "Authorization: Bearer $C" \
-  -H 'Content-Type: application/merge-patch+json' -d '{"name":"Hijacked"}'      # -> 403
+curl -s -X PUT localhost:3000/groups/$G/name -H "Authorization: Bearer $C" \
+  -H 'Content-Type: application/json' -d '{"name":"Hijacked"}'      # -> 403
 sqlite3 db/wasatext.db "SELECT name FROM chats WHERE id='$G';"                  # still the previous name
 sqlite3 db/wasatext.db "SELECT quote(name), quote(photoId) FROM chats WHERE id='$P';"  # NULL|NULL, the CHECK is never at risk
 ```
@@ -319,9 +319,9 @@ Concurrency. Two members renaming at once both succeed and the last writer wins,
 
 ---
 
-## 9. `setGroupPhoto` — `PATCH /groups/{groupId}/photo` (multipart)
+## 9. `setGroupPhoto` — `PUT /groups/{groupId}/photo` (multipart)
 ```shell
-curl -i -X PATCH localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG"
+curl -i -X PUT localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG"
 ```
 
 | case | reply |
@@ -346,8 +346,8 @@ The reply is a `GroupChat`, like §8: replacing a photo reads neither the member
 No leaked files, including the refusals that come after the upload. Who may change the photo is a condition of the `UPDATE` itself, so a `403` and a `404` are only known once the bytes are already on disk; the handler deletes them on every failing branch, not just on `500`:
 ```shell
 ls db/photos | wc -l                                                    # before
-curl -s -X PATCH localhost:3000/groups/$G/photo -H "Authorization: Bearer $C" -F "photoFile=@$PNG"   # -> 403
-curl -s -X PATCH localhost:3000/groups/00000000-0000-4000-8000-000000000001/photo \
+curl -s -X PUT localhost:3000/groups/$G/photo -H "Authorization: Bearer $C" -F "photoFile=@$PNG"   # -> 403
+curl -s -X PUT localhost:3000/groups/00000000-0000-4000-8000-000000000001/photo \
   -H "Authorization: Bearer $A" -F "photoFile=@$PNG"                    # -> 404
 ls db/photos | wc -l                                                    # same number
 sqlite3 db/wasatext.db "SELECT photoId FROM chats WHERE id='$G';"       # still the previous photo
@@ -355,8 +355,8 @@ sqlite3 db/wasatext.db "SELECT photoId FROM chats WHERE id='$G';"       # still 
 
 Garbage collection, as in §4: the replaced photo is dropped once nothing points at it, and the reply is written before the release, so a photo that survives a crash is garbage and never a failed request.
 ```shell
-P1=$(curl -s -X PATCH localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
-curl -s -X PATCH localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG" > /dev/null
+P1=$(curl -s -X PUT localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
+curl -s -X PUT localhost:3000/groups/$G/photo -H "Authorization: Bearer $A" -F "photoFile=@$PNG" > /dev/null
 ls db/photos/$P1                                    # -> No such file
 ```
 
@@ -429,7 +429,7 @@ curl -i -X DELETE localhost:3000/groups/$G/members/me -H "Authorization: Bearer 
 | a member of three leaves | `204` and an empty body |
 | the same caller leaves again | `403 {"code":403,"message":"not a member of the group"}` — it is no longer one of them |
 | a caller who was never a member | `403 not a member of the group` |
-| the last member leaves | `204`, and the group is gone (see below) |
+| the last member leaves | `204`; the group, its messages and their comments are gone, and their now-unreferenced photos are collected (see below) |
 | any call on a group already emptied | `404 {"code":404,"message":"group not found"}` — the row went with the last member |
 | a valid UUID owned by nobody | `404 group not found` |
 | the id of a private chat | `404 group not found` — its two members are its pair, and neither leaves it |
@@ -440,9 +440,9 @@ curl -i -X DELETE localhost:3000/groups/$G/members/me -H "Authorization: Bearer 
 
 The reply has no body, unlike every other endpoint of this API. What this call removes is one membership, whose whole content is the group of the path and the caller of the token: there is no value the caller does not already hold, so a `204` says everything a `200` could. Failures still carry the `Error` schema — it is success that is empty. 403 vs 404 still come from one read, for the same reason as §10.
 
-The group is never observably empty, which is why no reply has to say it is. Removing the last membership and dropping the group row are one transaction, so a concurrent reader sees the group with at least one member or does not see it at all. `LeaveGroup` only asks `SELECT 1 ... LIMIT 1` after the `DELETE` — whether anybody is left, never who, and never how many — and that answer decides whether the row goes. The method gives back the group photo id and nothing else: the handler needs it for `releasePhoto` and sends none of it to the client.
+The group is never observably empty, which is why no reply has to say it is. Removing the last membership and dropping the group row are one transaction, so a concurrent reader sees the group with at least one member or does not see it at all. `LeaveGroup` only asks `SELECT 1 ... LIMIT 1` after the `DELETE` — whether anybody is left, never who, and never how many — and that answer decides whether the row goes. Only in that last-member branch, the method gives the handler the group photo plus every distinct photo carried by the messages that are about to cascade away. None of those ids is sent to the client; they are candidates for `releasePhoto` after commit.
 
-The last member out drops the group: nobody can reach it again, so it goes with the caller, and its messages follow through the `ON DELETE CASCADE` of the `messages` table. No membership is left to cascade, the one this call removed being the last.
+The last member out drops the group: nobody can reach it again, so it goes with the caller, its messages follow through the `ON DELETE CASCADE` of the `messages` table, and their comments follow through the message cascade. No membership is left to cascade, the one this call removed being the last. The photo ids are selected before this delete, while all of those references still exist, and released only after the transaction commits.
 ```shell
 G2=$(curl -s -X POST localhost:3000/groups -H "Authorization: Bearer $A" \
   -F "data={\"name\":\"Drop \",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
@@ -457,7 +457,7 @@ sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chat_members WHERE chatId='$G2';"  
 ls db/photos/$GP                                                                       # -> No such file
 ```
 
-Garbage collection, as in §4 and §9. `LeaveGroup` gives back a photo id only when the caller was the last one out: while the group stands its own row still points at that photo, so nothing could release it and `releasePhoto` is never reached. On the last leave it is reached and asks `PhotoIsReferenced`, so a photo another row still shows survives the group, and the default one is never collected.
+Garbage collection, as in §4, §9 and §19. `LeaveGroup` gives back photo candidates only when the caller was the last one out: while the group stands, none of its own references disappears and `releasePhoto` is never reached. On the last leave the handler checks the group photo and every distinct message photo with `PhotoIsReferenced`. A forwarded photo, or any photo another user, group or message still references, therefore survives; a photo referenced only by the deleted group is collected, and the default photo is never removed.
 
 Nothing is written when a call is refused: after a `403`, `SELECT COUNT(*) FROM chat_members WHERE chatId='$G'` and `ls db/photos | wc -l` are both what they were.
 
@@ -476,7 +476,7 @@ Three fixtures: a group `G` holding A, B and C, a private chat `P` between A and
 ```shell
 G=$(curl -s -X POST localhost:3000/groups -H "Authorization: Bearer $A" \
   -F "data={\"name\":\"Study \",\"members\":[\"$B\",\"$C\"]};type=application/json" -F "photoFile=@$PNG" | id)
-P=$(curl -s -X POST localhost:3000/private-chats -H "Authorization: Bearer $A" \
+P=$(curl -s -X POST localhost:3000/private_chats -H "Authorization: Bearer $A" \
   -H 'Content-Type: application/json' -d "{\"id\":\"$B\"}" | id)
 G2=$(curl -s -X POST localhost:3000/groups -H "Authorization: Bearer $A" \
   -F "data={\"name\":\"Silent \",\"members\":[\"$B\"]};type=application/json" -F "photoFile=@$PNG" | id)
@@ -498,8 +498,8 @@ curl -i localhost:3000/me/chats -H "Authorization: Bearer $A"
 The borrow is live, and a group is never multiplied. A private chat holds `NULL` in `name` and `photoId` (the `CHECK` requires it) and reads both from the other member, so no copy is left to go stale on a `setMyUserName`; the `chatType` inside that same join is what keeps a group of three from coming back three times:
 ```shell
 curl -s localhost:3000/me/chats -H "Authorization: Bearer $B" | grep -o '"name":"[^"]*"'   # -> alice, the chat A reads as bob
-curl -s -X PATCH localhost:3000/me/username -H "Authorization: Bearer $B" \
-  -H 'Content-Type: application/merge-patch+json' -d "{\"username\":\"bob_renamed\"}" > /dev/null
+curl -s -X PUT localhost:3000/me/username -H "Authorization: Bearer $B" \
+  -H 'Content-Type: application/json' -d "{\"username\":\"bob_renamed\"}" > /dev/null
 curl -s localhost:3000/me/chats -H "Authorization: Bearer $A" | grep -o '"name":"[^"]*"'   # -> bob_renamed, with no write to chats
 curl -s localhost:3000/me/chats -H "Authorization: Bearer $A" | grep -o "\"id\":\"$G\"" | wc -l   # -> 1
 ```
@@ -659,20 +659,20 @@ sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE chatId='$GF';"   # -
 
 ---
 
-## 15. `forwardMessage` — `POST /chats/{chatId}/messages/forwards` (JSON)
+## 15. `forwardMessage` — `POST /chats/{chatId}/forwards` (JSON)
 Copies one existing message into a destination chat. The id in the body names the source message; the id in the URL names the destination chat. The source message stays untouched, while the copy gets a new id, date and sender and starts with no comments.
 
 The verification used two private chats: `PS` between A and B as the source, and `PD` between A and C as the destination. That makes A a member of both, B a source-only member, C a destination-only member, and D an outsider to both.
 
 ```shell
-PS=$(curl -s -X POST localhost:3000/private-chats -H "Authorization: Bearer $A" \
+PS=$(curl -s -X POST localhost:3000/private_chats -H "Authorization: Bearer $A" \
   -H 'Content-Type: application/json' -d "{\"id\":\"$B\"}" | id)
-PD=$(curl -s -X POST localhost:3000/private-chats -H "Authorization: Bearer $A" \
+PD=$(curl -s -X POST localhost:3000/private_chats -H "Authorization: Bearer $A" \
   -H 'Content-Type: application/json' -d "{\"id\":\"$C\"}" | id)
 MS=$(curl -s -X POST localhost:3000/chats/$PS/messages -H "Authorization: Bearer $A" \
   -F 'text=forward this text' | id)
 
-curl -i -X POST localhost:3000/chats/$PD/messages/forwards \
+curl -i -X POST localhost:3000/chats/$PD/forwards \
   -H "Authorization: Bearer $A" -H 'Content-Type: application/json' \
   -d "{\"messageId\":\"$MS\"}"
 ```
@@ -716,7 +716,7 @@ Checks have a deliberate order:
 
 Thus an invalid destination UUID wins over a broken body; once both ids are well formed, an absent source answers `message not found` before an absent destination is considered. An unknown JSON property is currently ignored, as for every other JSON request; that is the global `additionalProperties: false` mismatch in §22, not special behavior of forwarding.
 
-The endpoint originally failed before any request because it was registered on the same `POST /chats/:chatId/messages` route as `sendMessage`, and `httprouter` rejects a duplicate method/path. The verified registration is `POST /chats/:chatId/messages/forwards`, matching `doc/api.yaml`.
+The endpoint originally failed before any request because it was registered on the same `POST /chats/:chatId/messages` route as `sendMessage`, and `httprouter` rejects a duplicate method/path. The verified registration is `POST /chats/:chatId/forwards`, matching `doc/api.yaml`.
 
 ---
 
@@ -761,7 +761,7 @@ The read of the message, exact-chat check, membership check, upsert, `lastReadDa
 
 Checks run in this order: authentication, chat-id syntax, message-id syntax, JSON/emoji validation, message existence, exact chat, then membership. Consequently a malformed chat id wins over every later problem; once the request reaches the database, a missing message wins over a missing or mismatched chat, while a known message under the wrong chat answers `chat not found` before membership is considered.
 
-The route uses `PUT`, and `/me` identifies the authenticated user's unique comment on the message. Registering it as `POST /messages/:messageId/comments` conflicts with the static `POST /messages/forwards` branch in `httprouter` and prevents the server from starting; separating the methods makes both endpoints reachable.
+The route uses `PUT`, and `/me` identifies the authenticated user's unique comment on the message. Repeating the same request replaces that one comment's emoji instead of creating another comment resource.
 
 ---
 
@@ -890,8 +890,8 @@ The API layer receives the deleted message's optional `photoId` after commit and
 CORS is worth one check, since the frontend depends on it:
 ```shell
 curl -i -X OPTIONS localhost:3000/me/username -H 'Origin: http://localhost:5173' \
-  -H 'Access-Control-Request-Method: PATCH' -H 'Access-Control-Request-Headers: authorization,content-type'
-# -> 200, Access-Control-Allow-Origin: *, Access-Control-Allow-Methods: PATCH,
+  -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: authorization,content-type'
+# -> 200, Access-Control-Allow-Origin: *, Access-Control-Allow-Methods: PUT,
 #    Access-Control-Allow-Headers: Authorization,Content-Type, Access-Control-Max-Age: 1
 # The headers appear only when the request carries an Origin: a bare OPTIONS gets a plain 200
 ```
@@ -921,7 +921,7 @@ S10 — a member added is a member for every other call. A `createGroup` with B 
 
 S11 — leaving takes the whole group surface away, the inverse of S10. A `createGroup` with B and C → G; C `leaveGroup` → `204`; then C `setGroupName` → `403`, C `setGroupPhoto` → `403`, C `addToGroup` → `403`, C `leaveGroup` again → `403`. The same row that granted everything is the one just removed.
 
-S12 — a group outlives every member but the last. A `createGroup` with B → G with photo P; A `leaveGroup` → `204` and `chat_members` still holds B, `getPhoto P` → `200`; B `leaveGroup` → `204` and the `chats` row is gone, `getPhoto P` → `404`, and G is a `404` for both of them. The group is dropped exactly once, by the member that empties it, and its photo goes with it. The replies say none of this: a departed member is told only that it left, and the rest is read from the tables.
+S12 — a group outlives every member but the last. A `createGroup` with B → G with photo P; A `leaveGroup` → `204` and `chat_members` still holds B, `getPhoto P` → `200`; B `leaveGroup` → `204` and the `chats` row is gone, `getPhoto P` → `404`, and G is a `404` for both of them. The group is dropped exactly once, by the member that empties it: its messages and comments cascade, while the group photo and any message photo left unreferenced are collected; a photo still shared by a forwarded message survives. The replies say none of this: a departed member is told only that it left, and the rest is read from the tables and photo store.
 
 S13 — the list is the membership, seen from the other side. A fresh user `getMyConversations` → `404`; A `createPrivateChat` with it → the chat appears for both, named after the other one each time; A `createGroup` with it → the group appears too; it `leaveGroup` → the group is gone from its list and still in A's; it is the only member left of nothing, so once the private chat is its last chat the list holds exactly one row. Every row of §12 is one row of `chat_members`, which is why §10 and §11 change the list without touching it.
 
@@ -944,11 +944,10 @@ S20 — deleting the latest message restores the previous preview and an empty c
 ## 22. Known mismatches with `doc/api.yaml` (implemented endpoints only)
 Open:
 - `additionalProperties: false` is not enforced. `encoding/json` ignores unknown fields, so `{"username":"x","admin":true}` is accepted. Fix: `dec.DisallowUnknownFields()` in `decodeAndValidate`.
-- The request `Content-Type` is never read. `application/json` works where the spec says `application/merge-patch+json`. Permissive, not wrong.
 - A name is trimmed to be counted and stored untrimmed. `CountChars` measures `strings.TrimSpace(s)`, so `"  <100 chars>  "` passes the 1–100 rule and 104 characters reach the column and the reply, over `GroupName`'s `maxLength: 100`. This affects `ChatName`; `Username` is safe because its pattern refuses whitespace, and `MessageTextRequest` normalizes message text before validation. Fix: trim the name before storing, or count the untrimmed string.
 ```shell
-curl -s -X PATCH localhost:3000/groups/$G/name -H "Authorization: Bearer $A" \
-  -H 'Content-Type: application/merge-patch+json' -d "{\"name\":\"  $(printf 'x%.0s' $(seq 100))  \"}"
+curl -s -X PUT localhost:3000/groups/$G/name -H "Authorization: Bearer $A" \
+  -H 'Content-Type: application/json' -d "{\"name\":\"  $(printf 'x%.0s' $(seq 100))  \"}"
 sqlite3 db/wasatext.db "SELECT length(name) FROM chats WHERE id='$G';"   # -> 104
 ```
 

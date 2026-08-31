@@ -14,7 +14,7 @@ hasnt(){ case "$3" in *"$2"*) no "$1 (unwanted '$2')" "$3";; *) ok;; esac; }
 code(){ local m=$1 p=$2; shift 2; curl -s -o /dev/null -w '%{http_code}' -X "$m" "$H$p" "$@"; }
 body(){ local m=$1 p=$2; shift 2; curl -s -X "$m" "$H$p" "$@"; }
 mk()  { body POST /session -H "$JS" -d "{\"username\":\"$1\"}" | id; }
-JS='Content-Type: application/json'; MP='Content-Type: application/merge-patch+json'
+JS='Content-Type: application/json'
 PNG=db/photos/00000000-0000-4000-8000-000000000000
 photo() { sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/'; }
 DATA()  { printf 'data={"name":"%s","members":[%s]};type=application/json' "$1" "$2"; }
@@ -25,12 +25,12 @@ eq "S1 getUsers with that token" 200 "$(code GET "/users?username=s1$R" -H "Auth
 
 echo "S2 — the token survives a rename"
 U=$(mk "s2$R")
-eq "S2 rename"       200 "$(code PATCH /me/username -H "Authorization: Bearer $U" -H "$MP" -d "{\"username\":\"s2b$R\"}")"
+eq "S2 rename"       200 "$(code PUT /me/username -H "Authorization: Bearer $U" -H "$JS" -d "{\"username\":\"s2b$R\"}")"
 eq "S2 same token ok" 200 "$(code GET "/users?username=s2b$R" -H "Authorization: Bearer $U")"
 
 echo "S3 — a freed username is a new account"
 U1=$(mk "s3$R")
-eq "S3 rename away" 200 "$(code PATCH /me/username -H "Authorization: Bearer $U1" -H "$MP" -d "{\"username\":\"s3b$R\"}")"
+eq "S3 rename away" 200 "$(code PUT /me/username -H "Authorization: Bearer $U1" -H "$JS" -d "{\"username\":\"s3b$R\"}")"
 eq "S3 old name is new account" 201 "$(code POST /session -H "$JS" -d "{\"username\":\"s3$R\"}")"
 U2=$(mk "s3$R")
 ne "S3 different id"  "$U1" "$U2"
@@ -38,14 +38,14 @@ eq "S3 new name is the old account" "$U1" "$(mk "s3b$R")"
 
 echo "S4 — a taken username is released"
 V1=$(mk "s4a$R"); V2=$(mk "s4b$R")
-eq "S4 taken"    400 "$(code PATCH /me/username -H "Authorization: Bearer $V1" -H "$MP" -d "{\"username\":\"s4b$R\"}")"
-eq "S4 owner moves" 200 "$(code PATCH /me/username -H "Authorization: Bearer $V2" -H "$MP" -d "{\"username\":\"s4c$R\"}")"
-eq "S4 now free" 200 "$(code PATCH /me/username -H "Authorization: Bearer $V1" -H "$MP" -d "{\"username\":\"s4b$R\"}")"
+eq "S4 taken"    400 "$(code PUT /me/username -H "Authorization: Bearer $V1" -H "$JS" -d "{\"username\":\"s4b$R\"}")"
+eq "S4 owner moves" 200 "$(code PUT /me/username -H "Authorization: Bearer $V2" -H "$JS" -d "{\"username\":\"s4c$R\"}")"
+eq "S4 now free" 200 "$(code PUT /me/username -H "Authorization: Bearer $V1" -H "$JS" -d "{\"username\":\"s4b$R\"}")"
 
 echo "S5 — a photo outlives its replacement only while a row points at it"
 A=$(mk "s5a$R"); B=$(mk "s5b$R"); AU="Authorization: Bearer $A"
-P1=$(body PATCH /me/photo -H "$AU" -F "photoFile=@$PNG" | photo)
-P2=$(body PATCH /me/photo -H "$AU" -F "photoFile=@$PNG" | photo)
+P1=$(body PUT /me/photo -H "$AU" -F "photoFile=@$PNG" | photo)
+P2=$(body PUT /me/photo -H "$AU" -F "photoFile=@$PNG" | photo)
 ne "S5 new upload new id" "$P1" "$P2"
 eq "S5 replaced photo collected" 404 "$(code GET /photos/$P1 -H "$AU")"
 eq "S5 current photo served"     200 "$(code GET /photos/$P2 -H "$AU")"
@@ -55,13 +55,13 @@ eq "S5 group photo kept while the group exists" 200 "$(code GET /photos/$GP -H "
 
 echo "S6 — chat and group do not collide"
 A=$(mk "s6a$R"); B=$(mk "s6b$R"); AU="Authorization: Bearer $A"; BU="Authorization: Bearer $B"
-eq "S6 first create" 201 "$(code POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}")"
-C=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
-eq "S6 second is 200" 200 "$(code POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}")"
-eq "S6 other side same chat" "$C" "$(body POST /private-chats -H "$BU" -H "$JS" -d "{\"id\":\"$A\"}" | id)"
+eq "S6 first create" 201 "$(code POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}")"
+C=$(body POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
+eq "S6 second is 200" 200 "$(code POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}")"
+eq "S6 other side same chat" "$C" "$(body POST /private_chats -H "$BU" -H "$JS" -d "{\"id\":\"$A\"}" | id)"
 G=$(body POST /groups -H "$AU" -F "$(DATA "S6 $R" "\"$B\"")" -F "photoFile=@$PNG" | id)
 ne "S6 group is not the chat" "$C" "$G"
-eq "S6 chat unchanged after the group" "$C" "$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)"
+eq "S6 chat unchanged after the group" "$C" "$(body POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)"
 
 echo "S7 — nothing survives a refused write"
 A=$(mk "s7a$R"); AU="Authorization: Bearer $A"
@@ -74,27 +74,27 @@ echo "S8 — a rename touches the name and nothing else"
 A=$(mk "s8a$R"); B=$(mk "s8b$R"); AU="Authorization: Bearer $A"
 G=$(body POST /groups -H "$AU" -F "$(DATA "S8 $R" "\"$B\"")" -F "photoFile=@$PNG" | id)
 GP=$(sqlite3 db/wasatext.db "SELECT photoId FROM chats WHERE id='$G';")
-R1=$(body PATCH /groups/$G/name -H "$AU" -H "$MP" -d '{"name":"First"}')
-R2=$(body PATCH /groups/$G/name -H "$AU" -H "$MP" -d '{"name":"Second"}')
+R1=$(body PUT /groups/$G/name -H "$AU" -H "$JS" -d '{"name":"First"}')
+R2=$(body PUT /groups/$G/name -H "$AU" -H "$JS" -d '{"name":"Second"}')
 has "S8 photo unchanged 1" "\"photo\":\"/photos/$GP\"" "$R1"
 has "S8 photo unchanged 2" "\"photo\":\"/photos/$GP\"" "$R2"
 eq  "S8 photo still served" 200 "$(code GET /photos/$GP -H "$AU")"
 
 echo "S9 — the two kinds stay apart under /groups/"
 A=$(mk "s9a$R"); B=$(mk "s9b$R"); AU="Authorization: Bearer $A"
-C=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
-eq "S9 setGroupName on a private chat" 404 "$(code PATCH /groups/$C/name -H "$AU" -H "$MP" -d '{"name":"x"}')"
+C=$(body POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
+eq "S9 setGroupName on a private chat" 404 "$(code PUT /groups/$C/name -H "$AU" -H "$JS" -d '{"name":"x"}')"
 eq "S9 private chat row untouched" "NULL|NULL" "$(sqlite3 db/wasatext.db "SELECT quote(name)||'|'||quote(photoId) FROM chats WHERE id='$C';")"
 G=$(body POST /groups -H "$AU" -F "$(DATA "S9 $R" "\"$B\"")" -F "photoFile=@$PNG" | id)
-eq "S9 setGroupName on a group" 200 "$(code PATCH /groups/$G/name -H "$AU" -H "$MP" -d '{"name":"x"}')"
+eq "S9 setGroupName on a group" 200 "$(code PUT /groups/$G/name -H "$AU" -H "$JS" -d '{"name":"x"}')"
 
 echo "S10 — a member added is a member for every other call"
 A=$(mk "s10a$R"); B=$(mk "s10b$R"); C=$(mk "s10c$R"); D=$(mk "s10d$R")
 AU="Authorization: Bearer $A"; CU="Authorization: Bearer $C"
 G=$(body POST /groups -H "$AU" -F "$(DATA "S10 $R" "\"$B\"")" -F "photoFile=@$PNG" | id)
 eq "S10 add C"            200 "$(code POST /groups/$G/members -H "$AU" -H "$JS" -d "{\"members\":[\"$C\"]}")"
-eq "S10 C may rename"     200 "$(code PATCH /groups/$G/name  -H "$CU" -H "$MP" -d '{"name":"by C"}')"
-eq "S10 C may set photo"  200 "$(code PATCH /groups/$G/photo -H "$CU" -F "photoFile=@$PNG")"
+eq "S10 C may rename"     200 "$(code PUT /groups/$G/name  -H "$CU" -H "$JS" -d '{"name":"by C"}')"
+eq "S10 C may set photo"  200 "$(code PUT /groups/$G/photo -H "$CU" -F "photoFile=@$PNG")"
 eq "S10 C may add"        200 "$(code POST /groups/$G/members -H "$CU" -H "$JS" -d "{\"members\":[\"$D\"]}")"
 
 echo "S11 — leaving takes the whole group surface away"
@@ -102,8 +102,8 @@ A=$(mk "s11a$R"); B=$(mk "s11b$R"); C=$(mk "s11c$R")
 AU="Authorization: Bearer $A"; CU="Authorization: Bearer $C"
 G=$(body POST /groups -H "$AU" -F "$(DATA "S11 $R" "\"$B\",\"$C\"")" -F "photoFile=@$PNG" | id)
 eq "S11 C leaves"           204 "$(code DELETE /groups/$G/members/me -H "$CU")"
-eq "S11 C cannot rename"    403 "$(code PATCH /groups/$G/name  -H "$CU" -H "$MP" -d '{"name":"x"}')"
-eq "S11 C cannot set photo" 403 "$(code PATCH /groups/$G/photo -H "$CU" -F "photoFile=@$PNG")"
+eq "S11 C cannot rename"    403 "$(code PUT /groups/$G/name  -H "$CU" -H "$JS" -d '{"name":"x"}')"
+eq "S11 C cannot set photo" 403 "$(code PUT /groups/$G/photo -H "$CU" -F "photoFile=@$PNG")"
 eq "S11 C cannot add"       403 "$(code POST /groups/$G/members -H "$CU" -H "$JS" -d "{\"members\":[\"$B\"]}")"
 eq "S11 C cannot leave again" 403 "$(code DELETE /groups/$G/members/me -H "$CU")"
 
@@ -123,7 +123,7 @@ eq "S12 404 for B"       404 "$(code DELETE /groups/$G/members/me -H "$BU")"
 echo "S13 — the list is the membership, seen from the other side"
 A=$(mk "s13a$R"); N=$(mk "s13n$R"); AU="Authorization: Bearer $A"; NU="Authorization: Bearer $N"
 eq "S13 fresh user has no chats" 404 "$(code GET /me/chats -H "$NU")"
-P=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$N\"}" | id)
+P=$(body POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$N\"}" | id)
 has "S13 chat named after the other, for N" "s13a$R" "$(body GET /me/chats -H "$NU")"
 has "S13 chat named after the other, for A" "s13n$R" "$(body GET /me/chats -H "$AU")"
 G=$(body POST /groups -H "$AU" -F "$(DATA "S13 $R" "\"$N\"")" -F "photoFile=@$PNG" | id)
@@ -135,16 +135,16 @@ eq  "S13 N is left with the private chat alone" 1 "$(body GET /me/chats -H "$NU"
 
 echo "S14 — a rename reaches the chats list of somebody else"
 A=$(mk "s14a$R"); B=$(mk "s14b$R"); AU="Authorization: Bearer $A"; BU="Authorization: Bearer $B"
-body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" > /dev/null
+body POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" > /dev/null
 has "S14 A reads B's old name" "s14b$R" "$(body GET /me/chats -H "$AU")"
 CHATS_BEFORE=$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chats;")
-eq  "S14 B renames" 200 "$(code PATCH /me/username -H "$BU" -H "$MP" -d "{\"username\":\"s14renamed$R\"}")"
+eq  "S14 B renames" 200 "$(code PUT /me/username -H "$BU" -H "$JS" -d "{\"username\":\"s14renamed$R\"}")"
 has "S14 A reads the new name" "s14renamed$R" "$(body GET /me/chats -H "$AU")"
 eq  "S14 no row written to chats" "$CHATS_BEFORE" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chats;")"
 
 echo "S15 — the homepage preview is the last message of the opened chat"
 A=$(mk "s15a$R"); B=$(mk "s15b$R"); AU="Authorization: Bearer $A"; BU="Authorization: Bearer $B"
-P=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
+P=$(body POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
 LONG=$(printf 'abcdefghij%.0s' $(seq 1 12))
 # both are written by the endpoint, so their order is the one the server gave them
 body POST /chats/$P/messages -H "$BU" -F 'text=older one' > /dev/null
@@ -172,11 +172,11 @@ eq  "S15 opening the chat changes nothing else in the list" \
 echo "S16 — a forwarded message becomes the destination's message and preview without changing its source"
 A=$(mk "s16a$R"); B=$(mk "s16b$R"); C=$(mk "s16c$R")
 AU="Authorization: Bearer $A"; BU="Authorization: Bearer $B"; CU="Authorization: Bearer $C"
-PS=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
-PD=$(body POST /private-chats -H "$AU" -H "$JS" -d "{\"id\":\"$C\"}" | id)
+PS=$(body POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$B\"}" | id)
+PD=$(body POST /private_chats -H "$AU" -H "$JS" -d "{\"id\":\"$C\"}" | id)
 SRC=$(body POST /chats/$PS/messages -H "$BU" -F 'text=forwarded across chats' -F "photoFile=@$PNG")
 MS=$(echo "$SRC" | id); PSRC=$(echo "$SRC" | photo)
-FWD=$(body POST /chats/$PD/messages/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")
+FWD=$(body POST /chats/$PD/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MS\"}")
 MF=$(echo "$FWD" | id); PFWD=$(echo "$FWD" | photo)
 ne  "S16 the copy has a new id" "$MS" "$MF"
 eq  "S16 the copy reuses the exact photo" "$PSRC" "$PFWD"

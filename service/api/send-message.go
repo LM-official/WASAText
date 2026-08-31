@@ -6,7 +6,6 @@ import (
 
 	"github.com/MercuriLorenzo/WASAText/service/api/reqcontext"
 	"github.com/MercuriLorenzo/WASAText/service/database"
-	"github.com/MercuriLorenzo/WASAText/service/photos"
 	"github.com/MercuriLorenzo/WASAText/service/schemas"
 	"github.com/julienschmidt/httprouter"
 )
@@ -30,12 +29,8 @@ func (rt *_router) sendMessage(w http.ResponseWriter, r *http.Request, ps httpro
 		return
 	}
 
-	// Bound the body before anything reads it:
-	// without this a client could stream any number of bytes and the multipart parser would follow along
-	r.Body = http.MaxBytesReader(w, r.Body, schemas.MaxPhotoBytes+multipartOverhead)
-
 	// A body too large ends here as well: error 400 to everything the client got wrong, size included
-	if err := r.ParseMultipartForm(multipartMemory); err != nil {
+	if err := parsePhotoMultipartForm(w, r); err != nil {
 		writeError(w, ctx, http.StatusBadRequest, "invalid multipart body", err)
 		return
 	}
@@ -73,7 +68,7 @@ func (rt *_router) sendMessage(w http.ResponseWriter, r *http.Request, ps httpro
 		photoId, err = rt.photos.Save(file)
 		if err != nil {
 			// What the client sent is the problem, not the server
-			if errors.Is(err, photos.ErrUnsupportedType) || errors.Is(err, photos.ErrPhotoTooLarge) || errors.Is(err, photos.ErrEmptyPhoto) {
+			if isInvalidPhoto(err) {
 				writeError(w, ctx, http.StatusBadRequest, "invalid photo", err)
 				return
 			}

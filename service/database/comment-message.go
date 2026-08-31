@@ -97,9 +97,7 @@ func (db *appdbimpl) CommentMessage(userId schemas.UserId, chatId schemas.ChatId
 	// but a comment has no date of its own to reuse, so a fresh timestamp is taken here
 	// The lastReadDate < guard prevents a clock rollback from moving the value backwards
 	now := globaltime.Format(globaltime.Now().UTC().Truncate(time.Millisecond))
-	_, err = tx.Exec(`UPDATE chat_members SET lastReadDate = ?
-					  WHERE chatId = ? AND userId = ? AND lastReadDate < ?;`,
-		now, chatId, userId, now)
+	err = advanceLastReadDate(tx, userId, chatId, now)
 	// Error updating the caller
 	if err != nil {
 		return schemas.Message{}, false, fmt.Errorf("cannot update the last read date of the commenter: %w", err)
@@ -107,9 +105,7 @@ func (db *appdbimpl) CommentMessage(userId schemas.UserId, chatId schemas.ChatId
 
 	// The state of the message is computed unlike SendMessage/ForwardMessage
 	// The sender is caught up above
-	var isRead bool
-	err = tx.QueryRow(`SELECT NOT EXISTS (SELECT 1 FROM chat_members WHERE chatId = ? AND lastReadDate < ?);`,
-		chatId, msgDateText).Scan(&isRead)
+	state, err := readMessageState(tx, chatId, msgDateText)
 	// Error reading the state
 	if err != nil {
 		return schemas.Message{}, false, fmt.Errorf("cannot read the state of the message: %w", err)
@@ -150,7 +146,7 @@ func (db *appdbimpl) CommentMessage(userId schemas.UserId, chatId schemas.ChatId
 			Id:    messageId,
 			User:  msgUser,
 			Date:  date,
-			State: schemas.MessageStateReceived,
+			State: state,
 		},
 		Content: schemas.MessageContent{
 			Text:  schemas.MessageText(msgText.String),
@@ -158,9 +154,5 @@ func (db *appdbimpl) CommentMessage(userId schemas.UserId, chatId schemas.ChatId
 		},
 		Comments: comments,
 	}
-	if isRead {
-		message.State = schemas.MessageStateRead
-	}
-
 	return message, alreadyExisted, nil
 }
