@@ -30,6 +30,11 @@ var (
 	// ErrMessageNotFound is returned when no message owns the given id
 	ErrMessageNotFound = errors.New("message not found")
 
+	// ErrRepliedMessageNotFound is returned when replyTo names no message of the chat being written in
+	// A message of another chat is not found either:
+	// from this chat that id points at nothing its readers could open, so the two cases are one answer
+	ErrRepliedMessageNotFound = errors.New("replied message not found")
+
 	// ErrCommentNotFound is returned when the caller has no comment on the message
 	ErrCommentNotFound = errors.New("comment not found")
 

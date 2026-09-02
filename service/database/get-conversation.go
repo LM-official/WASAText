@@ -100,7 +100,7 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	// so a chat of any length is read in the same bounded time,
 	// and rowid breaks the tie by insertion order between two messages that share an instant
 	chat.Messages = make(schemas.Messages, 0)
-	messageRows, err := tx.Query(`SELECT m.id, m.userId, m.date, m.text, m.photoId,
+	messageRows, err := tx.Query(`SELECT m.id, m.userId, m.date, m.text, m.photoId, m.replyTo,
 										 -- A message is read (rm) once no member of the chat is left behind it,
 										 -- which is a fact about the members and not about the caller:
 										 -- the same message reads the same to everybody
@@ -124,12 +124,12 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	for messageRows.Next() {
 		// A message carries text, photo, or both, so one of the two columns may be NULL but never both
 		var msgDate string
-		var msgText, msgPhoto sql.NullString
+		var msgText, msgPhoto, msgReplyTo sql.NullString
 		var isRead bool
 		var message schemas.Message
 
 		// Error reading a row: a shorter list would be a wrong answer, not a partial one
-		if err := messageRows.Scan(&message.Id, &message.User, &msgDate, &msgText, &msgPhoto, &isRead); err != nil {
+		if err := messageRows.Scan(&message.Id, &message.User, &msgDate, &msgText, &msgPhoto, &msgReplyTo, &isRead); err != nil {
 			return schemas.ChatDetail{}, fmt.Errorf("cannot read a message of the chat %q: %w", chatId, err)
 		}
 		// A date the schema cannot have written: the row is broken, not the request
@@ -144,6 +144,11 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 		// The photo travels as the id it is stored as, and the api layer is what turns it into a URL
 		if msgPhoto.Valid {
 			message.Content.Photo = schemas.PhotoURL(msgPhoto.String)
+		}
+		// NULL where the message answers none, and where the message it answered has been deleted:
+		// the foreign key clears the column instead of taking this row with it
+		if msgReplyTo.Valid {
+			message.ReplyTo = schemas.MessageId(msgReplyTo.String)
 		}
 
 		if isRead {

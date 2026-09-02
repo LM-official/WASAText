@@ -18,9 +18,13 @@ import (
 // text empty means the message carries no text, photoId empty means it carries no photo:
 // the api layer refuses the pair that is empty on both sides, and the CHECK of the table is the last guard
 //
+// replyTo empty means the message answers nothing;
+// otherwise it must name a message of this same chat
+//
 // It returns ErrChatNotFound if no chat owns that id, ErrNotAMember if the caller does not belong to it,
-// and ErrChatFull if the chat already holds schemas.ChatMaxMessages messages
-func (db *appdbimpl) SendMessage(userId schemas.UserId, chatId schemas.ChatId, text schemas.MessageText, photoId schemas.PhotoId) (schemas.Message, error) {
+// ErrChatFull if the chat already holds schemas.ChatMaxMessages messages,
+// and ErrRepliedMessageNotFound if replyTo names no message of this chat
+func (db *appdbimpl) SendMessage(userId schemas.UserId, chatId schemas.ChatId, text schemas.MessageText, photoId schemas.PhotoId, replyTo schemas.MessageId) (schemas.Message, error) {
 	// The count is read and then written against, and the state is read after the insert:
 	// all of them must see the same chat
 	tx, err := db.c.Begin()
@@ -63,6 +67,24 @@ func (db *appdbimpl) SendMessage(userId schemas.UserId, chatId schemas.ChatId, t
 		return schemas.Message{}, ErrChatFull
 	}
 
+	// A quote must point at a message of this chat, and the check belongs inside the transaction:
+	// the message it names could otherwise be deleted between the check and the insert,
+	// leaving the row pointing at nothing.
+	// The chat is part of the condition, so a real message of another chat is refused exactly like an id that owns nothing;
+	// from here it names neither
+	if replyTo != "" {
+		var repliedExists bool
+		err = tx.QueryRow(`SELECT EXISTS (SELECT 1 FROM messages WHERE id = ? AND chatId = ?);`,
+			replyTo, chatId).Scan(&repliedExists)
+		// Error reading the replied message
+		if err != nil {
+			return schemas.Message{}, fmt.Errorf("cannot read the replied message %q: %w", replyTo, err)
+		}
+		if !repliedExists {
+			return schemas.Message{}, ErrRepliedMessageNotFound
+		}
+	}
+
 	// Generate the new UUID
 	newUUID, err := uuid.NewV4()
 	// Error generating the UUID
@@ -78,8 +100,11 @@ func (db *appdbimpl) SendMessage(userId schemas.UserId, chatId schemas.ChatId, t
 
 	// An absent text and an absent photo reach the column as NULL and never as an empty string:
 	// both NULL leave a row with nothing to preview
-	_, err = tx.Exec(`INSERT INTO messages (id, chatId, userId, text, photoId, date) VALUES (?, ?, ?, ?, ?, ?);`,
-		newId, chatId, userId, schemas.NullIfEmpty(string(text)), schemas.NullIfEmpty(string(photoId)), dateText)
+	// An absent quote reaches the column as NULL too, so a message answering nothing holds nothing
+	_, err = tx.Exec(`INSERT INTO messages (id, chatId, userId, text, photoId, date, replyTo)
+					  VALUES (?, ?, ?, ?, ?, ?, ?);`,
+		newId, chatId, userId, schemas.NullIfEmpty(string(text)), schemas.NullIfEmpty(string(photoId)),
+		dateText, schemas.NullIfEmpty(string(replyTo)))
 	// Error inserting the message
 	if err != nil {
 		return schemas.Message{}, fmt.Errorf("cannot write the message in the chat %q: %w", chatId, err)
@@ -120,6 +145,8 @@ func (db *appdbimpl) SendMessage(userId schemas.UserId, chatId schemas.ChatId, t
 			// The photo travels as the id it is stored as, and the api layer is what turns it into a URL
 			Photo: schemas.PhotoURL(photoId),
 		},
+		// Given back as it was accepted: the row was just written with it
+		ReplyTo: replyTo,
 		// A message is born with no reaction, and the list is answered empty and never null
 		Comments: make(schemas.Comments, 0),
 	}

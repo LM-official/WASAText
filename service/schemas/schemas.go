@@ -160,8 +160,13 @@ type MessageContent struct {
 
 type Message struct {
 	MessageBase
-	Content  MessageContent `json:"content"`
-	Comments Comments       `json:"comments"` // The reactions on this message, empty list if none
+	Content MessageContent `json:"content"`
+	// The message this one answers, absent when it answers none
+	// It is always a message of the same chat, so the client finds it in the page it already holds
+	// and never has to ask for it;
+	// a quote whose message was deleted comes back absent, because retracting a message must not retract the answer somebody else wrote to it
+	ReplyTo  MessageId `json:"replyTo,omitempty"`
+	Comments Comments  `json:"comments"` // The reactions on this message, empty list if none
 }
 type Messages []Message
 

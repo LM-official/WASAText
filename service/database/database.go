@@ -52,7 +52,7 @@ type AppDatabase interface {
 	GetUsers(username schemas.Username) (schemas.Users, error)
 	GetMyConversations(userId schemas.UserId) (schemas.ChatSummaries, error)
 	GetConversation(userId schemas.UserId, chatId schemas.ChatId) (schemas.ChatDetail, error)
-	SendMessage(userId schemas.UserId, chatId schemas.ChatId, text schemas.MessageText, photoId schemas.PhotoId) (schemas.Message, error)
+	SendMessage(userId schemas.UserId, chatId schemas.ChatId, text schemas.MessageText, photoId schemas.PhotoId, replyTo schemas.MessageId) (schemas.Message, error)
 	DeleteMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) (schemas.PhotoId, error)
 	ForwardMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) (schemas.Message, error)
 	CommentMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId, emoji schemas.Emoji) (schemas.Message, bool, error)
@@ -152,11 +152,18 @@ func New(db *sql.DB) (AppDatabase, error) {
 		text TEXT,
 		photoId TEXT,
 		date TEXT NOT NULL,
+		-- The message this one answers, NULL for a message that answers none
+		-- It is always a message of the same chat:
+		-- a quote of something the readers here cannot open would be a reference to nothing, so sendMessage refuses it
+		replyTo TEXT,
 		-- An empty message is not allowed
 		CHECK (text IS NOT NULL OR photoId IS NOT NULL),
 		-- Dropping a chat drops its messages
 		FOREIGN KEY (chatId) REFERENCES chats(id) ON DELETE CASCADE,
-		FOREIGN KEY (userId) REFERENCES users(id)
+		FOREIGN KEY (userId) REFERENCES users(id),
+		-- Deleting the quoted message keeps the answer and drops the quote:
+		-- a reply is a message on its own, written by somebody else, and retracting one message must not retract another
+		FOREIGN KEY (replyTo) REFERENCES messages(id) ON DELETE SET NULL
 	);
 
 	-- Performance only:

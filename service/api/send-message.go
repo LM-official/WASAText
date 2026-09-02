@@ -11,7 +11,12 @@ import (
 )
 
 // sendMessage writes a message in a chat the authenticated user is a member of
-// A message carries text, a photo, or both
+// A message carries text, a photo, or both, and may answer another message of the same chat
+//
+// Replying is a property of the message and not an operation of its own:
+// the assignment names sendMessage and forwardMessage as operations and no third one,
+// and a reply is this same request carrying one more field;
+// the whole multipart body, the photo and the chat cap are already here
 func (rt *_router) sendMessage(w http.ResponseWriter, r *http.Request, ps httprouter.Params, ctx reqcontext.RequestContext) {
 	// Get the userId that authenticate injected in the request
 	userId, ok := userIdFromContext(r)
@@ -44,6 +49,17 @@ func (rt *_router) sendMessage(w http.ResponseWriter, r *http.Request, ps httpro
 		return
 	}
 	text, hasText := textReq.Text, textReq.Text != ""
+
+	// The message being answered travels as a form field, and is optional:
+	// a message answering none simply carries no replyTo
+	// An id that is there must be a well formed one before it reaches the database, exactly like the chat id of the URL above
+	replyTo := schemas.MessageId(r.FormValue("replyTo"))
+	if replyTo != "" {
+		if err := replyTo.IsValid(); err != nil {
+			writeError(w, ctx, http.StatusBadRequest, "invalid reply id", err)
+			return
+		}
+	}
 
 	// The photo is optional here: a part that is missing is a message without a photo and not a bad request,
 	// while a part that is there and broken still is one
@@ -79,7 +95,7 @@ func (rt *_router) sendMessage(w http.ResponseWriter, r *http.Request, ps httpro
 	}
 
 	// Query
-	message, err := rt.db.SendMessage(userId, chatId, text, photoId)
+	message, err := rt.db.SendMessage(userId, chatId, text, photoId, replyTo)
 	if err != nil {
 		// Whatever the failure is, the photo is on disk and no row points at it: drop it instead of leaking a file
 		// It is always an upload of this request, never a photo shared with something else
@@ -96,6 +112,13 @@ func (rt *_router) sendMessage(w http.ResponseWriter, r *http.Request, ps httpro
 		// The chat is there, but writing in it belongs to its members
 		if errors.Is(err, database.ErrNotAMember) {
 			writeError(w, ctx, http.StatusForbidden, "not a member of the chat", nil)
+			return
+		}
+		// replyTo names no message of this chat:
+		// either nothing owns that id, or the message it owns belongs somewhere else,
+		// and from this chat the two are the same nothing
+		if errors.Is(err, database.ErrRepliedMessageNotFound) {
+			writeError(w, ctx, http.StatusNotFound, "replied message not found", nil)
 			return
 		}
 		// The chat already holds schemas.ChatMaxMessages messages:

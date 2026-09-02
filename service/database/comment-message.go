@@ -37,13 +37,13 @@ func (db *appdbimpl) CommentMessage(userId schemas.UserId, chatId schemas.ChatId
 	// Also pull everything needed later to rebuild the schemas.Message: its author, text, photo, date
 	var msgChatId schemas.ChatId
 	var msgUser schemas.UserId
-	var msgText, msgPhotoId sql.NullString
+	var msgText, msgPhotoId, msgReplyTo sql.NullString
 	var msgDateText string
 	var isMember bool
-	err = tx.QueryRow(`SELECT m.chatId, m.userId, m.text, m.photoId, m.date,
+	err = tx.QueryRow(`SELECT m.chatId, m.userId, m.text, m.photoId, m.date, m.replyTo,
 							  EXISTS(SELECT 1 FROM chat_members WHERE chatId = m.chatId AND userId = ?)
 					   FROM messages AS m WHERE m.id = ?;`,
-		userId, messageId).Scan(&msgChatId, &msgUser, &msgText, &msgPhotoId, &msgDateText, &isMember)
+		userId, messageId).Scan(&msgChatId, &msgUser, &msgText, &msgPhotoId, &msgDateText, &msgReplyTo, &isMember)
 	// No message owns that id
 	if errors.Is(err, sql.ErrNoRows) {
 		return schemas.Message{}, false, ErrMessageNotFound
@@ -152,6 +152,9 @@ func (db *appdbimpl) CommentMessage(userId schemas.UserId, chatId schemas.ChatId
 			Text:  schemas.MessageText(msgText.String),
 			Photo: schemas.PhotoURL(msgPhotoId.String),
 		},
+		// A NullString that is not valid gives back "", which is the absent quote of an ordinary message:
+		// reacting to a message never changes what it answers
+		ReplyTo:  schemas.MessageId(msgReplyTo.String),
 		Comments: comments,
 	}
 	return message, alreadyExisted, nil
