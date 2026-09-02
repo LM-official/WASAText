@@ -50,6 +50,7 @@ type AppDatabase interface {
 	SetMyUserName(userId schemas.UserId, newUsername schemas.Username) (schemas.User, error)
 	SetMyPhoto(userId schemas.UserId, newPhotoId schemas.PhotoId) (schemas.User, schemas.PhotoId, error)
 	GetUsers(username schemas.Username) (schemas.Users, error)
+	GetUserById(userId schemas.UserId) (schemas.User, error)
 	GetMyConversations(userId schemas.UserId) (schemas.ChatSummaries, error)
 	GetConversation(userId schemas.UserId, chatId schemas.ChatId) (schemas.ChatDetail, error)
 	SendMessage(userId schemas.UserId, chatId schemas.ChatId, text schemas.MessageText, photoId schemas.PhotoId, replyTo schemas.MessageId) (schemas.Message, error)

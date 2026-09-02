@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/MercuriLorenzo/WASAText/service/api/reqcontext"
@@ -55,35 +56,46 @@ func (rt *_router) createGroup(w http.ResponseWriter, r *http.Request, ps httpro
 		return
 	}
 
-	// A group owns its photo and the chats CHECK refuses one without it, so the upload is required
+	// The photo is optional: a group without one starts with a default photo,
+	// so the chats CHECK still finds a photoId and the group has something to show.
+	// A part that is there and broken is still a bad request
+	// setGroupPhoto replaces it later, for this group alone: the default is one shared id and never a file this group owns
 	file, _, err := r.FormFile("photoFile")
-	if err != nil {
-		writeError(w, ctx, http.StatusBadRequest, "missing photoFile field", err)
+	hasPhoto := err == nil
+	if err != nil && !errors.Is(err, http.ErrMissingFile) {
+		writeError(w, ctx, http.StatusBadRequest, "invalid photoFile field", err)
 		return
 	}
-	defer func() { _ = file.Close() }()
 
-	// Write the file first: an id is worth saving only once the bytes behind it exist
-	// Nothing between here and the insert can fail, so a saved photo is either referenced or deleted
-	photoId, err := rt.photos.Save(file)
-	if err != nil {
-		// What the client sent is the problem, not the server
-		if isInvalidPhoto(err) {
-			writeError(w, ctx, http.StatusBadRequest, "invalid photo", err)
+	photoId := schemas.DefaultPhotoId
+	if hasPhoto {
+		defer func() { _ = file.Close() }()
+
+		// Write the file first: an id is worth saving only once the bytes behind it exist
+		// Nothing between here and the insert can fail, so a saved photo is either referenced or deleted
+		photoId, err = rt.photos.Save(file)
+		if err != nil {
+			// What the client sent is the problem, not the server
+			if isInvalidPhoto(err) {
+				writeError(w, ctx, http.StatusBadRequest, "invalid photo", err)
+				return
+			}
+
+			writeError(w, ctx, http.StatusInternalServerError, "cannot store the photo", err)
 			return
 		}
-
-		writeError(w, ctx, http.StatusInternalServerError, "cannot store the photo", err)
-		return
 	}
 
 	// Query
 	id, err := rt.db.CreateGroup(userId, req.Members, req.Name, photoId)
 	if err != nil {
 		// The new photo is on disk but no row points at it: drop it instead of leaking a file
-		// It is always an upload of this request, never a photo shared with something else
-		if delErr := rt.photos.Delete(photoId); delErr != nil {
-			logWarning(ctx, "cannot delete the photo of a failed group creation", delErr)
+		// Only an upload of this request is dropped: the default is shared by every user and every group that never uploaded one,
+		// so a failure here must leave it exactly where it is
+		if hasPhoto {
+			if delErr := rt.photos.Delete(photoId); delErr != nil {
+				logWarning(ctx, "cannot delete the photo of a failed group creation", delErr)
+			}
 		}
 
 		writeError(w, ctx, http.StatusInternalServerError, "cannot create the group", err)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/endpoints.md section 21, S1-S20 — the scenarios: a sequence, not a single call
+# tests/endpoints.md section 22, S1-S20 — the scenarios: a sequence, not a single call
 cd /Users/lorenzo/WASAText
 H=localhost:3000
 R=$(date +%s)

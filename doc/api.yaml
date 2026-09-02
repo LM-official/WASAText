@@ -358,6 +358,14 @@ components:                                           # Reusable components
           properties:
             content:
               $ref: '#/components/schemas/MessageContent'
+            replyTo:                                  # Never required: absent when the message answers none,
+              description: |                          # and absent again once the message it answered is deleted
+                The message this one answers.
+                Always a message of the same chat, so the client finds it in the page it already holds and never has to ask for it.
+                Deleting the answered message clears this field and keeps the answer:
+                a reply is a message of its own and retracting one must not retract the other
+              allOf:
+                - $ref: '#/components/schemas/MessageId'
             comments:
               description: 'The reactions on this message, empty list if none'
               type: array
@@ -573,6 +581,14 @@ components:                                           # Reusable components
       in: query
       schema:
         $ref: '#/components/schemas/Username'
+      required: true
+
+    ParamUserId:
+      name: user_id
+      description: 'User unique identifier'
+      in: path
+      schema:
+        $ref: '#/components/schemas/UserId'
       required: true
 
     ParamChatId:
@@ -877,6 +893,38 @@ paths:                                                # Rest endpoints
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /users/{user_id}:
+    get:
+      operationId: 'getUser'
+      description: |
+        Retrieves the user that owns the given id.
+        Every other read hands the client ids and not users:
+        the sender of a message, the author of a comment and the members of a chat are all a UserId,
+        while what the interface has to draw is a username and a photo.
+      summary: 'Get a user by id'
+      tags: ['User']
+      parameters:
+        - $ref: '#/components/parameters/ParamUserId'
+      responses:
+        '200':
+          description: 'User information retrieved successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+              example:
+                id: '126a4180-65aa-42ec-a945-5fd21dec0538'
+                username: 'MercuriLorenzo'
+                photo: '/photos/d41f8a72-3b6c-4e19-8a52-0c7f5b21e934'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 
   # Every chat endpoints
   /me/chats:
@@ -1012,6 +1060,10 @@ paths:                                                # Rest endpoints
         Sending catches the sender up with the chat, since writing in it means having seen what is above.
         In a chat the sender is alone in there is nobody to be behind, so the message is born 'read'.
         A chat holds up to 10000 messages, and one that is full is a bad request and not a conflict.
+        A message may answer another one through replyTo, which is a property of the message and not an operation of its own:
+        the same request writes an answer and an ordinary message alike.
+        The id it carries must name a message of the same chat, since a quote of something the readers here cannot open would point at nothing;
+        anything else is not found.
       summary: 'Send a new message'
       tags: ['PrivateChat', 'Group']
       parameters:
@@ -1028,6 +1080,10 @@ paths:                                                # Rest endpoints
                   $ref: '#/components/schemas/MessageText'
                 photoFile:
                   $ref: '#/components/schemas/Photo'
+                replyTo:                              # Optional: a message answering none carries no replyTo
+                  description: 'The message of this same chat that the new one answers'
+                  allOf:
+                    - $ref: '#/components/schemas/MessageId'
               minProperties: 1                        # at least one of text/photo is present
         required: true
       responses:
@@ -1320,6 +1376,9 @@ paths:                                                # Rest endpoints
         Creates a group whose members are the users of the request plus the authenticated one.
         The creator is not carried by the body: it opens the group, so it belongs to it and the server adds it,
         which is why the list holds one place less than the whole group.
+        The photo is optional: a group created without one starts from a default photo,
+        and keeps it until setGroupPhoto replaces it.
+        The default is one shared id and never a file the group owns, so creating a group without a photo writes nothing.
         The reply carries the chat id alone.
       summary: 'Create a new group chat'
       tags: ['Group']
@@ -1333,9 +1392,9 @@ paths:                                                # Rest endpoints
               properties:
                 data:
                   $ref: '#/components/schemas/CreateGroupData'
-                photoFile:
-                  $ref: '#/components/schemas/Photo'
-              required: [data, photoFile]
+                photoFile:                            # Optional: without it the group starts from the
+                  $ref: '#/components/schemas/Photo'  # default photo, as a new user does
+              required: [data]
             encoding:                                 # For multipart/form-data with JSON field
               data:
                 contentType: application/json

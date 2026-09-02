@@ -53,7 +53,7 @@ sqlite3 "$DB" "PRAGMA foreign_keys=ON;
 find db/photos -type f ! -name "$DEFAULT_PHOTO" -delete
 
 # ---------- cast ----------
-# The four the sections are written around: dave belongs to nothing and is the outsider through §19
+# The four the sections are written around: dave belongs to nothing and is the outsider through §20
 for u in alice bob carl dave; do login "$u" > /dev/null; done
 
 # §3 reads these two together: '_' is a LIKE wildcard and a legal username character,
@@ -61,7 +61,7 @@ for u in alice bob carl dave; do login "$u" > /dev/null; done
 login a_b > /dev/null
 login axb > /dev/null
 
-# §10 fills a group to schemas.GroupMaxMembers, and addToGroup checks UsersExist before it counts,
+# §11 fills a group to schemas.GroupMaxMembers, and addToGroup checks UsersExist before it counts,
 # so all of them have to be real users and not just well formed ids
 # §3 reads the same 99 to check the LIMIT 20 of the search: one cast, two uses
 for i in $(seq -w 1 99); do login "fill$i" > /dev/null; done
