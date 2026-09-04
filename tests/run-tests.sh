@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/endpoints.md, sections 0-21, for the endpoints registered in api-handler.go
+# tests/endpoints.md, sections 0-20, for the endpoints registered in api-handler.go
 cd /Users/lorenzo/WASAText
 H=localhost:3000
 PASS=0; FAIL=0; FAILED=()
@@ -264,7 +264,10 @@ eq  "11 adds"             200 "$(code POST /groups/$G/members -H "$AU" -H "$JS" 
 has "11 has members"      '"members":[' "$AB"
 has "11 has chatType"     '"chatType":"group"' "$AB"
 hasnt "11 no snippet key" 'snippet' "$AB"
-eq  "11 member count"     3 "$(echo "$AB" | grep -o '"members":\[[^]]*\]' | grep -o '-' | wc -l | tr -d ' ' | awk '{print $1/4}')"
+ABM=$(echo "$AB" | grep -o '"members":\[[^]]*\]')
+eq  "11 member count"     3 "$(echo "$ABM" | grep -o '"username":' | wc -l | tr -d ' ')"
+has "11 member carries a username" '"username":"' "$ABM"
+has "11 member photo is a URL"     '"photo":"/photos/' "$ABM"
 eq  "11 already inside"   200 "$(code POST /groups/$G/members -H "$AU" -H "$JS" -d "{\"members\":[\"$C\"]}")"
 eq  "11 no duplicate row" 3 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM chat_members WHERE chatId='$G';")"
 eq  "11 caller itself"    200 "$(code POST /groups/$G/members -H "$AU" -H "$JS" -d "{\"members\":[\"$A\"]}")"
@@ -386,14 +389,17 @@ has "14 photo is a URL"   '"photo":"/photos/' "$GC"
 has "14 has members"      '"members":[' "$GC"
 has "14 has messages"     '"messages":[' "$GC"
 hasnt "14 no snippet in the opened chat" '"snippet"' "$GC"
-eq  "14 group holds three members" 3 "$(echo "$GC" | grep -o '"members":\[[^]]*\]' | grep -o '[0-9a-f-]\{36\}' | wc -l | tr -d ' ')"
+GCM=$(echo "$GC" | grep -o '"members":\[[^]]*\]')
+eq  "14 group holds three members" 3 "$(echo "$GCM" | grep -o '"username":' | wc -l | tr -d ' ')"
+has "14 member carries a username" '"username":"' "$GCM"
+has "14 member photo is a URL"     '"photo":"/photos/' "$GCM"
 # a private chat reads the name of the other member, so one row answers each of the two differently
 PC=$(body GET /chats/$P -H "$AU")
 eq  "14 private 200"      200 "$(code GET /chats/$P -H "$AU")"
 has "14 private chatType" '"chatType":"private"' "$PC"
 has "14 private named after the other" "\"name\":\"bob_renamed\"" "$PC"
 has "14 private name flips" "\"name\":\"alice_new\"" "$(body GET /chats/$P -H "$BU")"
-eq  "14 private holds two members" 2 "$(echo "$PC" | grep -o '"members":\[[^]]*\]' | grep -o '[0-9a-f-]\{36\}' | wc -l | tr -d ' ')"
+eq  "14 private holds two members" 2 "$(echo "$PC" | grep -o '"members":\[[^]]*\]' | grep -o '"username":' | wc -l | tr -d ' ')"
 # newest first, rowid breaking the tie inside the same millisecond, exactly as the snippet of section 13
 eq  "14 messages newest first" "SECOND in that millisecond FIRST in that millisecond " "$(echo "$PC" | grep -o 'SECOND in that millisecond\|FIRST in that millisecond' | tr '\n' ' ')"
 has "14 text only message"  '"content":{"text":"SECOND in that millisecond"}' "$PC"
@@ -882,133 +888,57 @@ eq "18 uppercase message id" 400 "$(code DELETE /chats/$CG/messages/$(echo $CMID
 eq "18 no token wins over malformed ids" 401 "$(code DELETE /chats/nope/messages/nope/comments/me)"
 eq "18 trailing slash" 404 "$(code DELETE "$CP/" -H "$AU")"
 
-echo "### 19. getMessageComments  (reply: Comments wrapper, 200; empty collection: 404)"
-GMC=/chats/$CG/messages/$CMID/comments
-GMC_FILE=/tmp/wasatext-get-comments-response-$$.json
-GMC_HDR=/tmp/wasatext-get-comments-headers-$$.txt
-
-# Section 18 left C's newer row before B's older row. A read returns that insertion order and catches A up.
-sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2000-01-01T00:00:00.000Z' WHERE chatId='$CG' AND userId='$A';"
-GMC_ROWS=$(sqlite3 db/wasatext.db "SELECT group_concat(id||'|'||userId||'|'||emoji, ';') FROM (SELECT * FROM comments WHERE messageId='$CMID' ORDER BY rowid DESC);")
-GMC_MESSAGES=$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages;")
-GMC_PHOTOS=$(ls db/photos | wc -l | tr -d ' ')
-GMC_CODE=$(curl -s -D "$GMC_HDR" -o "$GMC_FILE" -w '%{http_code}' "$H$GMC" -H "$AU")
-GMC_BODY=$(tr -d '\n' < "$GMC_FILE")
-GMC_EXPECTED="{\"comments\":[{\"id\":\"$UCID\",\"user\":\"$C\",\"emoji\":\"❤️\"},{\"id\":\"$UBID\",\"user\":\"$B\",\"emoji\":\"🎉\"}]}"
-eq "19 member reads comments" 200 "$GMC_CODE"
-has "19 JSON content type" 'Content-Type: application/json' "$(tr -d '\r' < "$GMC_HDR")"
-eq "19 complete newest-first list" "$GMC_EXPECTED" "$GMC_BODY"
-eq "19 response has two comments" 2 "$(echo "$GMC_BODY" | grep -o '"id"' | wc -l | tr -d ' ')"
-eq "19 another member sees the same list" "$GMC_EXPECTED" "$(body GET "$GMC" -H "$BU")"
-eq "19 comments are not changed" "$GMC_ROWS" \
-   "$(sqlite3 db/wasatext.db "SELECT group_concat(id||'|'||userId||'|'||emoji, ';') FROM (SELECT * FROM comments WHERE messageId='$CMID' ORDER BY rowid DESC);")"
-eq "19 reading catches the caller up" 1 \
-   "$(sqlite3 db/wasatext.db "SELECT lastReadDate > '2000-01-01T00:00:00.000Z' FROM chat_members WHERE chatId='$CG' AND userId='$A';")"
-eq "19 reading changes no message" "$GMC_MESSAGES" "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages;")"
-eq "19 reading changes no photo" "$GMC_PHOTOS" "$(ls db/photos | wc -l | tr -d ' ')"
-
-# Updating keeps B's id and rowid, while a newly recreated A comment becomes the newest row.
-eq "19 update B for ordering" 200 "$(code PUT "$CP" -H "$BU" -H "$JS" -d '{"emoji":"😎"}')"
-GMC_UPDATED="{\"comments\":[{\"id\":\"$UCID\",\"user\":\"$C\",\"emoji\":\"❤️\"},{\"id\":\"$UBID\",\"user\":\"$B\",\"emoji\":\"😎\"}]}"
-eq "19 emoji update keeps insertion order" "$GMC_UPDATED" "$(body GET "$GMC" -H "$AU")"
-eq "19 recreate A for ordering" 201 "$(code PUT "$CP" -H "$AU" -H "$JS" -d '{"emoji":"🔥"}')"
-GMC_AID=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$CMID' AND userId='$A';")
-GMC_WITH_A="{\"comments\":[{\"id\":\"$GMC_AID\",\"user\":\"$A\",\"emoji\":\"🔥\"},{\"id\":\"$UCID\",\"user\":\"$C\",\"emoji\":\"❤️\"},{\"id\":\"$UBID\",\"user\":\"$B\",\"emoji\":\"😎\"}]}"
-eq "19 newly inserted comment comes first" "$GMC_WITH_A" "$(body GET "$GMC" -H "$CU")"
-eq "19 complete list now has three" 3 "$(body GET "$GMC" -H "$CU" | grep -o '"id"' | wc -l | tr -d ' ')"
-eq "19 remove ordering fixture" 204 "$(code DELETE "$CP" -H "$AU")"
-
-# The private message has no reactions after section 18: empty is a JSON 404, but the valid read still catches C up.
-PRIVATE_GMC=/chats/$PD/messages/$FWID/comments
-sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2000-01-01T00:00:00.000Z' WHERE chatId='$PD' AND userId='$C';"
-eq "19 message with no comments" 404 "$(code GET "$PRIVATE_GMC" -H "$CU")"
-has "19 empty collection body" '"message":"no comments found"' "$(body GET "$PRIVATE_GMC" -H "$CU")"
-eq "19 empty read catches the caller up" 1 \
-   "$(sqlite3 db/wasatext.db "SELECT lastReadDate > '2000-01-01T00:00:00.000Z' FROM chat_members WHERE chatId='$PD' AND userId='$C';")"
-eq "19 create private reaction fixture" 201 "$(code PUT "$PRIVATE_CP" -H "$CU" -H "$JS" -d '{"emoji":"👍"}')"
-PRIVATE_CID=$(sqlite3 db/wasatext.db "SELECT id FROM comments WHERE messageId='$FWID' AND userId='$C';")
-eq "19 private chat comments" 200 "$(code GET "$PRIVATE_GMC" -H "$AU")"
-eq "19 private chat list" "{\"comments\":[{\"id\":\"$PRIVATE_CID\",\"user\":\"$C\",\"emoji\":\"👍\"}]}" \
-   "$(body GET "$PRIVATE_GMC" -H "$AU")"
-eq "19 remove private fixture" 204 "$(code DELETE "$PRIVATE_CP" -H "$CU")"
-
-# Membership, ownership and syntax errors never change comments or read state.
-REF18=$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM comments)||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$CG' ORDER BY userId));")
-eq "19 outsider" 403 "$(code GET "$GMC" -H "$DU")"
-has "19 outsider body" '"message":"not a member of the chat"' "$(body GET "$GMC" -H "$DU")"
-eq "19 message under the wrong chat" 404 "$(code GET /chats/$PD/messages/$CMID/comments -H "$AU")"
-has "19 wrong chat body" '"message":"chat not found"' "$(body GET /chats/$PD/messages/$CMID/comments -H "$AU")"
-eq "19 unknown message" 404 "$(code GET /chats/$CG/messages/11111111-2222-4333-8444-555555555555/comments -H "$AU")"
-has "19 unknown message body" '"message":"message not found"' \
-    "$(body GET /chats/$CG/messages/11111111-2222-4333-8444-555555555555/comments -H "$AU")"
-has "19 missing message wins over missing chat" '"message":"message not found"' \
-    "$(body GET /chats/11111111-2222-4333-8444-555555555555/messages/22222222-2222-4222-8222-222222222222/comments -H "$AU")"
-eq "19 refused reads change nothing" "$REF18" \
-   "$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM comments)||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$CG' ORDER BY userId));")"
-
-eq "19 bad chat id" 400 "$(code GET /chats/not-a-uuid/messages/$CMID/comments -H "$AU")"
-has "19 bad chat id body" '"message":"invalid chat id"' "$(body GET /chats/not-a-uuid/messages/$CMID/comments -H "$AU")"
-eq "19 uppercase chat id" 400 "$(code GET /chats/$(echo $CG | tr a-f A-F)/messages/$CMID/comments -H "$AU")"
-eq "19 bad message id" 400 "$(code GET /chats/$CG/messages/not-a-uuid/comments -H "$AU")"
-has "19 bad message id body" '"message":"invalid message id"' "$(body GET /chats/$CG/messages/not-a-uuid/comments -H "$AU")"
-eq "19 uppercase message id" 400 "$(code GET /chats/$CG/messages/$(echo $CMID | tr a-f A-F)/comments -H "$AU")"
-
-eq "19 no token wins over malformed ids" 401 "$(code GET /chats/nope/messages/nope/comments)"
-eq "19 POST on the collection" 405 "$(code POST "$GMC" -H "$AU")"
-eq "19 DELETE on the collection" 405 "$(code DELETE "$GMC" -H "$AU")"
-eq "19 trailing slash" 404 "$(code GET "$GMC/" -H "$AU")"
-
-echo "### 20. deleteMessage  (reply: empty, 204)"
+echo "### 19. deleteMessage  (reply: empty, 204)"
 DMG=$(body POST /groups -H "$AU" -F "data={\"name\":\"Delete tests\",\"members\":[\"$B\",\"$C\"]};type=application/json" -F "photoFile=@$PNG" | id)
 DM_PREV=$(body POST /chats/$DMG/messages -H "$BU" -F 'text=previous message' | id)
 DMID=$(body POST /chats/$DMG/messages -H "$AU" -F 'text=delete this message' | id)
 DM_PATH=/chats/$DMG/messages/$DMID
-eq "20 first comment fixture" 201 "$(code PUT "$DM_PATH/comments/me" -H "$BU" -H "$JS" -d '{"emoji":"👍"}')"
-eq "20 second comment fixture" 201 "$(code PUT "$DM_PATH/comments/me" -H "$CU" -H "$JS" -d '{"emoji":"😂"}')"
+eq "19 first comment fixture" 201 "$(code PUT "$DM_PATH/comments/me" -H "$BU" -H "$JS" -d '{"emoji":"👍"}')"
+eq "19 second comment fixture" 201 "$(code PUT "$DM_PATH/comments/me" -H "$CU" -H "$JS" -d '{"emoji":"😂"}')"
 sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2000-01-01T00:00:00.000Z' WHERE chatId='$DMG' AND userId='$A';"
 DM_FILE=/tmp/wasatext-delete-message-response-$$.txt
 DM_CODE=$(curl -s -o "$DM_FILE" -w '%{http_code}' -X DELETE "$H$DM_PATH" -H "$AU")
-eq "20 sender deletes group message" 204 "$DM_CODE"
-eq "20 204 body is empty" 0 "$(wc -c < "$DM_FILE" | tr -d ' ')"
-eq "20 message row is gone" 0 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE id='$DMID';")"
-eq "20 comments cascade" 0 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$DMID';")"
-eq "20 previous message remains" 1 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE id='$DM_PREV';")"
-eq "20 deletion catches sender up" 1 \
+eq "19 sender deletes group message" 204 "$DM_CODE"
+eq "19 204 body is empty" 0 "$(wc -c < "$DM_FILE" | tr -d ' ')"
+eq "19 message row is gone" 0 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE id='$DMID';")"
+eq "19 comments cascade" 0 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM comments WHERE messageId='$DMID';")"
+eq "19 previous message remains" 1 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE id='$DM_PREV';")"
+eq "19 deletion catches sender up" 1 \
    "$(sqlite3 db/wasatext.db "SELECT lastReadDate > '2000-01-01T00:00:00.000Z' FROM chat_members WHERE chatId='$DMG' AND userId='$A';")"
 DM_OPEN=$(body GET /chats/$DMG -H "$AU")
-has "20 opened chat keeps previous message" "\"id\":\"$DM_PREV\"" "$DM_OPEN"
-hasnt "20 opened chat drops deleted message" "\"id\":\"$DMID\"" "$DM_OPEN"
+has "19 opened chat keeps previous message" "\"id\":\"$DM_PREV\"" "$DM_OPEN"
+hasnt "19 opened chat drops deleted message" "\"id\":\"$DMID\"" "$DM_OPEN"
 DM_LIST=$(body GET /me/chats -H "$AU")
-has "20 preview falls back to previous message" "\"snippet\":{\"id\":\"$DM_PREV\"" "$DM_LIST"
-hasnt "20 preview drops deleted message" "\"snippet\":{\"id\":\"$DMID\"" "$DM_LIST"
-eq "20 deleting the same message again" 404 "$(code DELETE "$DM_PATH" -H "$AU")"
-has "20 repeated delete body" '"message":"message not found"' "$(body DELETE "$DM_PATH" -H "$AU")"
+has "19 preview falls back to previous message" "\"snippet\":{\"id\":\"$DM_PREV\"" "$DM_LIST"
+hasnt "19 preview drops deleted message" "\"snippet\":{\"id\":\"$DMID\"" "$DM_LIST"
+eq "19 deleting the same message again" 404 "$(code DELETE "$DM_PATH" -H "$AU")"
+has "19 repeated delete body" '"message":"message not found"' "$(body DELETE "$DM_PATH" -H "$AU")"
 
 # Refused deletes leave the message, its comments and every member read date untouched.
 DM_OTHER=$(body POST /chats/$DMG/messages -H "$AU" -F 'text=sender only' | id)
 DM_OTHER_PATH=/chats/$DMG/messages/$DM_OTHER
-eq "20 comment on protected fixture" 201 "$(code PUT "$DM_OTHER_PATH/comments/me" -H "$CU" -H "$JS" -d '{"emoji":"❤️"}')"
+eq "19 comment on protected fixture" 201 "$(code PUT "$DM_OTHER_PATH/comments/me" -H "$CU" -H "$JS" -d '{"emoji":"❤️"}')"
 REF19=$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM messages WHERE id='$DM_OTHER')||'|'||(SELECT COUNT(*) FROM comments WHERE messageId='$DM_OTHER')||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$DMG' ORDER BY userId));")
-eq "20 member who is not sender" 403 "$(code DELETE "$DM_OTHER_PATH" -H "$BU")"
-has "20 not-sender body" '"message":"not the sender of the message"' "$(body DELETE "$DM_OTHER_PATH" -H "$BU")"
-eq "20 outsider" 403 "$(code DELETE "$DM_OTHER_PATH" -H "$DU")"
-has "20 outsider body" '"message":"not a member of the chat"' "$(body DELETE "$DM_OTHER_PATH" -H "$DU")"
-eq "20 message under the wrong chat" 404 "$(code DELETE /chats/$PD/messages/$DM_OTHER -H "$AU")"
-has "20 wrong chat body" '"message":"chat not found"' "$(body DELETE /chats/$PD/messages/$DM_OTHER -H "$AU")"
-eq "20 refused deletes write nothing" "$REF19" \
+eq "19 member who is not sender" 403 "$(code DELETE "$DM_OTHER_PATH" -H "$BU")"
+has "19 not-sender body" '"message":"not the sender of the message"' "$(body DELETE "$DM_OTHER_PATH" -H "$BU")"
+eq "19 outsider" 403 "$(code DELETE "$DM_OTHER_PATH" -H "$DU")"
+has "19 outsider body" '"message":"not a member of the chat"' "$(body DELETE "$DM_OTHER_PATH" -H "$DU")"
+eq "19 message under the wrong chat" 404 "$(code DELETE /chats/$PD/messages/$DM_OTHER -H "$AU")"
+has "19 wrong chat body" '"message":"chat not found"' "$(body DELETE /chats/$PD/messages/$DM_OTHER -H "$AU")"
+eq "19 refused deletes write nothing" "$REF19" \
    "$(sqlite3 db/wasatext.db "SELECT (SELECT COUNT(*) FROM messages WHERE id='$DM_OTHER')||'|'||(SELECT COUNT(*) FROM comments WHERE messageId='$DM_OTHER')||'|'||(SELECT group_concat(userId||'='||lastReadDate, ';') FROM (SELECT userId,lastReadDate FROM chat_members WHERE chatId='$DMG' ORDER BY userId));")"
-eq "20 unknown message" 404 "$(code DELETE /chats/$DMG/messages/11111111-2222-4333-8444-555555555555 -H "$AU")"
-has "20 unknown message body" '"message":"message not found"' \
+eq "19 unknown message" 404 "$(code DELETE /chats/$DMG/messages/11111111-2222-4333-8444-555555555555 -H "$AU")"
+has "19 unknown message body" '"message":"message not found"' \
     "$(body DELETE /chats/$DMG/messages/11111111-2222-4333-8444-555555555555 -H "$AU")"
-has "20 missing message wins over missing chat" '"message":"message not found"' \
+has "19 missing message wins over missing chat" '"message":"message not found"' \
     "$(body DELETE /chats/11111111-2222-4333-8444-555555555555/messages/22222222-2222-4222-8222-222222222222 -H "$AU")"
 
 # The route works for private chats too, and a future read date is never moved backwards.
 DM_PRIVATE=$(body POST /chats/$PD/messages -H "$AU" -F 'text=private deletion' | id)
 sqlite3 db/wasatext.db "UPDATE chat_members SET lastReadDate='2099-01-01T00:00:00.000Z' WHERE chatId='$PD' AND userId='$A';"
-eq "20 private message deleted" 204 "$(code DELETE /chats/$PD/messages/$DM_PRIVATE -H "$AU")"
-eq "20 private message row is gone" 0 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE id='$DM_PRIVATE';")"
-eq "20 deletion never moves lastReadDate backwards" '2099-01-01T00:00:00.000Z' \
+eq "19 private message deleted" 204 "$(code DELETE /chats/$PD/messages/$DM_PRIVATE -H "$AU")"
+eq "19 private message row is gone" 0 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE id='$DM_PRIVATE';")"
+eq "19 deletion never moves lastReadDate backwards" '2099-01-01T00:00:00.000Z' \
    "$(sqlite3 db/wasatext.db "SELECT lastReadDate FROM chat_members WHERE chatId='$PD' AND userId='$A';")"
 
 # A forwarded photo is one shared file: deleting one message keeps it, deleting its last reference collects it.
@@ -1016,37 +946,37 @@ DM_PHOTO_BODY=$(body POST /chats/$DMG/messages -H "$AU" -F "photoFile=@$PNG")
 DM_PHOTO=$(printf '%s' "$DM_PHOTO_BODY" | id)
 DM_PHOTO_ID=$(printf '%s' "$DM_PHOTO_BODY" | sed 's/.*"photo":"\/photos\/\([^"]*\)".*/\1/')
 DM_FORWARD=$(body POST /chats/$PD/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$DM_PHOTO\"}" | id)
-eq "20 shared photo has two references" 2 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE photoId='$DM_PHOTO_ID';")"
-eq "20 delete original photo message" 204 "$(code DELETE /chats/$DMG/messages/$DM_PHOTO -H "$AU")"
-eq "20 forwarded reference remains" 1 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE photoId='$DM_PHOTO_ID';")"
-eq "20 shared photo file remains" 200 "$(code GET /photos/$DM_PHOTO_ID -H "$AU")"
-eq "20 delete final photo reference" 204 "$(code DELETE /chats/$PD/messages/$DM_FORWARD -H "$AU")"
+eq "19 shared photo has two references" 2 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE photoId='$DM_PHOTO_ID';")"
+eq "19 delete original photo message" 204 "$(code DELETE /chats/$DMG/messages/$DM_PHOTO -H "$AU")"
+eq "19 forwarded reference remains" 1 "$(sqlite3 db/wasatext.db "SELECT COUNT(*) FROM messages WHERE photoId='$DM_PHOTO_ID';")"
+eq "19 shared photo file remains" 200 "$(code GET /photos/$DM_PHOTO_ID -H "$AU")"
+eq "19 delete final photo reference" 204 "$(code DELETE /chats/$PD/messages/$DM_FORWARD -H "$AU")"
 if [ ! -f "db/photos/$DM_PHOTO_ID" ]; then ok; else no "19 unreferenced photo file is collected" "db/photos/$DM_PHOTO_ID still exists"; fi
-eq "20 collected photo is not served" 404 "$(code GET /photos/$DM_PHOTO_ID -H "$AU")"
+eq "19 collected photo is not served" 404 "$(code GET /photos/$DM_PHOTO_ID -H "$AU")"
 
 # Authentication wins before URL parsing; otherwise chatId is validated before messageId.
-eq "20 bad chat id" 400 "$(code DELETE /chats/not-a-uuid/messages/$DM_OTHER -H "$AU")"
-has "20 bad chat id body" '"message":"invalid chat id"' "$(body DELETE /chats/not-a-uuid/messages/$DM_OTHER -H "$AU")"
-eq "20 uppercase chat id" 400 "$(code DELETE /chats/$(echo $DMG | tr a-f A-F)/messages/$DM_OTHER -H "$AU")"
-eq "20 bad message id" 400 "$(code DELETE /chats/$DMG/messages/not-a-uuid -H "$AU")"
-has "20 bad message id body" '"message":"invalid message id"' "$(body DELETE /chats/$DMG/messages/not-a-uuid -H "$AU")"
-eq "20 uppercase message id" 400 "$(code DELETE /chats/$DMG/messages/$(echo $DM_OTHER | tr a-f A-F) -H "$AU")"
-eq "20 no token wins over malformed ids" 401 "$(code DELETE /chats/nope/messages/nope)"
-eq "20 GET on message item" 405 "$(code GET "$DM_OTHER_PATH" -H "$AU")"
-eq "20 POST on message item" 405 "$(code POST "$DM_OTHER_PATH" -H "$AU")"
-eq "20 PUT on message item" 405 "$(code PUT "$DM_OTHER_PATH" -H "$AU")"
-eq "20 trailing slash" 404 "$(code DELETE "$DM_OTHER_PATH/" -H "$AU")"
+eq "19 bad chat id" 400 "$(code DELETE /chats/not-a-uuid/messages/$DM_OTHER -H "$AU")"
+has "19 bad chat id body" '"message":"invalid chat id"' "$(body DELETE /chats/not-a-uuid/messages/$DM_OTHER -H "$AU")"
+eq "19 uppercase chat id" 400 "$(code DELETE /chats/$(echo $DMG | tr a-f A-F)/messages/$DM_OTHER -H "$AU")"
+eq "19 bad message id" 400 "$(code DELETE /chats/$DMG/messages/not-a-uuid -H "$AU")"
+has "19 bad message id body" '"message":"invalid message id"' "$(body DELETE /chats/$DMG/messages/not-a-uuid -H "$AU")"
+eq "19 uppercase message id" 400 "$(code DELETE /chats/$DMG/messages/$(echo $DM_OTHER | tr a-f A-F) -H "$AU")"
+eq "19 no token wins over malformed ids" 401 "$(code DELETE /chats/nope/messages/nope)"
+eq "19 GET on message item" 405 "$(code GET "$DM_OTHER_PATH" -H "$AU")"
+eq "19 POST on message item" 405 "$(code POST "$DM_OTHER_PATH" -H "$AU")"
+eq "19 PUT on message item" 405 "$(code PUT "$DM_OTHER_PATH" -H "$AU")"
+eq "19 trailing slash" 404 "$(code DELETE "$DM_OTHER_PATH/" -H "$AU")"
 
-echo "### 21. router level"
-eq "21 unknown path"   404 "$(code GET /nope)"
-eq "21 wrong method"   405 "$(code GET /session)"
-eq "21 trailing slash" 404 "$(code GET /users/ -H "$AU")"
+echo "### 20. router level"
+eq "20 unknown path"   404 "$(code GET /nope)"
+eq "20 wrong method"   405 "$(code GET /session)"
+eq "20 trailing slash" 404 "$(code GET /users/ -H "$AU")"
 CORS=$(curl -s -D- -o /dev/null -X OPTIONS "$H/me/username" -H 'Origin: http://localhost:5173' \
   -H 'Access-Control-Request-Method: PUT' -H 'Access-Control-Request-Headers: authorization,content-type')
-has "21 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
-has "21 CORS allow method"  'Access-Control-Allow-Methods: PUT' "$CORS"
-has "21 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
-has "21 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
+has "20 CORS allow origin"  'Access-Control-Allow-Origin: *' "$CORS"
+has "20 CORS allow method"  'Access-Control-Allow-Methods: PUT' "$CORS"
+has "20 CORS allow headers" 'Access-Control-Allow-Headers: Authorization,Content-Type' "$CORS"
+has "20 CORS max age"       'Access-Control-Max-Age: 1' "$CORS"
 
 echo
 echo "==================================================="

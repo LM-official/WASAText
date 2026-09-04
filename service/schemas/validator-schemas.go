@@ -268,6 +268,31 @@ func (m Members) IsValid() error {
 	return nil
 }
 
+// Returns error if the ChatMembers list does not meets the rules, otherwise nil
+// The same rules Members answers for, checked on the user each entry carries instead of on a bare id:
+// the cap is the one of the group, and the id is what a member is held twice by
+func (m ChatMembers) IsValid() error {
+	n := len(m)
+	if n > GroupMaxMembers {
+		return fmt.Errorf("invalid members number: %d; must be at most %d", n, GroupMaxMembers)
+	}
+
+	// Ensure that each member appears only once in the list
+	seen := make(map[UserId]bool, n)
+	for _, member := range m {
+		if err := member.IsValid(); err != nil { // Check each member validity
+			return err
+		}
+
+		if seen[member.Id] { // Check for duplicates
+			return fmt.Errorf("invalid duplicate member: '%s'", member.Id)
+		}
+		seen[member.Id] = true
+	}
+
+	return nil
+}
+
 // Returns error if the ChatWithMembers does not meets the rules, otherwise nil
 func (c *ChatWithMembers) IsValid() error {
 	if c == nil {

@@ -69,8 +69,11 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	}
 
 	// The caller is a member, so the chat has at least one member
-	chat.Members = make(schemas.Members, 0)
-	memberRows, err := tx.Query(`SELECT userId FROM chat_members WHERE chatId = ?;`, chatId)
+	// The name and the photo travel with the id: the client draws both
+	chat.Members = make(schemas.ChatMembers, 0)
+	memberRows, err := tx.Query(`SELECT u.id, u.username, u.photoId
+								 FROM chat_members AS cm JOIN users AS u ON u.id = cm.userId
+								 WHERE cm.chatId = ?;`, chatId)
 	// Error reading the members
 	if err != nil {
 		return schemas.ChatDetail{}, fmt.Errorf("cannot read the members of the chat %q: %w", chatId, err)
@@ -79,9 +82,10 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	defer func() { _ = memberRows.Close() }()
 
 	for memberRows.Next() {
-		var member schemas.UserId
+		var member schemas.User
 		// Error reading a row: a shorter list would be a wrong answer, not a partial one
-		if err := memberRows.Scan(&member); err != nil {
+		// The photo is the stored id here: only the api layer turns it into a URL
+		if err := memberRows.Scan(&member.Id, &member.Username, &member.Photo); err != nil {
 			return schemas.ChatDetail{}, fmt.Errorf("cannot read a member of the chat %q: %w", chatId, err)
 		}
 

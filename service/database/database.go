@@ -58,7 +58,6 @@ type AppDatabase interface {
 	ForwardMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) (schemas.Message, error)
 	CommentMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId, emoji schemas.Emoji) (schemas.Message, bool, error)
 	UncommentMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) error
-	GetMessageComments(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) (schemas.Comments, error)
 	CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.UserId) (schemas.ChatId, bool, error)
 	CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatId, error)
 	SetGroupName(userId schemas.UserId, groupId schemas.ChatId, newName schemas.ChatName) (schemas.ChatBase, error)

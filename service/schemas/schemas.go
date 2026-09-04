@@ -85,7 +85,16 @@ type ChatName string // The group name, or the username of the other member in a
 // A private chat is always the two of its pair
 const GroupMaxMembers = 100
 
+// Members is a list of ids: what a request names, and what a lookup asks about
+// createGroup and addToGroup are given ids, and UsersExist checks ids
 type Members []UserId
+
+// ChatMembers is a list of users: what a chat answers with
+// Every read hands out ids, but the interface has to draw a username and a photo,
+// so the members of a chat travel with both and the client never has to ask who they are.
+// A sender who left the chat is not here, and its name is still read one id at a time:
+// this list is the membership, not everybody the answer mentions
+type ChatMembers []User
 
 // UserChatsPageSize is how many chats one read of the chats of a user gives back:
 // the most recently active ones, which is where the homepage opens, while the older ones are what the client asks for by scrolling
@@ -112,7 +121,7 @@ type ChatSummaries []ChatSummary
 // ChatWithMembers is the base + who belongs to the chat
 type ChatWithMembers struct {
 	ChatBase
-	Members Members `json:"members"`
+	Members ChatMembers `json:"members"`
 }
 
 // ChatDetail is an opened chat: the base + the members and the full messages list

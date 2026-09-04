@@ -20,6 +20,16 @@ func withPhotoURLs(us schemas.Users) schemas.Users {
 	return us
 }
 
+// withMemberPhotoURLs turns the stored photo id of every member of a chat into the URL the API returns
+// A chat answers with its members, so this belongs beside the chat helper below and has to be called
+// wherever one of them leaves this package: getConversation and addToGroup
+func withMemberPhotoURLs(ms schemas.ChatMembers) schemas.ChatMembers {
+	for i := range ms {
+		ms[i] = withPhotoURL(ms[i])
+	}
+	return ms
+}
+
 // withChatPhotoURL turns the stored photo id of a chat into the URL the API returns
 // It takes the base every chat shape is built on, so one call covers the summary,
 // the chat with its members and the opened chat alike

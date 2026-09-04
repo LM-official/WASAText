@@ -41,7 +41,7 @@ sqlite3 "$DB" "DELETE FROM users WHERE username='$PROBE';"
 # foreign_keys is a per-connection pragma and the sqlite3 CLI does not inherit the DSN the server opens
 # (cmd/webapi/main.go passes _foreign_keys=on): without it a DELETE cascades nothing and strands rows
 sqlite3 "$DB" "PRAGMA foreign_keys=ON;
-	-- commentMessage, uncommentMessage, getMessageComments and deleteMessage build their own lifecycle after this clean slate
+	-- commentMessage, uncommentMessage and deleteMessage build their own lifecycle after this clean slate
 	DELETE FROM comments;
 	DELETE FROM messages;
 	DELETE FROM chat_members;

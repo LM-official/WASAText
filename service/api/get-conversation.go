@@ -49,6 +49,8 @@ func (rt *_router) getConversation(w http.ResponseWriter, r *http.Request, ps ht
 	// Response
 	// The base is embedded, so the photo id it carries is turned into a URL through it
 	chat.ChatBase = withChatPhotoURL(chat.ChatBase)
+	// Every member carries its own photo, the same way a user read on its own does
+	chat.Members = withMemberPhotoURLs(chat.Members)
 	// The messages carry one photo each at most, and the ones without keep the field empty
 	chat.Messages = withMessagePhotoURLs(chat.Messages)
 	writeJSON(w, ctx, http.StatusOK, chat)

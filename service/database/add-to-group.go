@@ -80,8 +80,12 @@ func (db *appdbimpl) AddToGroup(userId schemas.UserId, groupId schemas.ChatId, u
 	// so how long it gets is what the table says and not what the request asked:
 	// no capacity is guessed here, append grows it
 	// Empty is never the answer: the caller is a member, so it is one of these rows
-	chat.Members = make(schemas.Members, 0)
-	rows, err := tx.Query(`SELECT userId FROM chat_members WHERE chatId = ?;`, groupId)
+	chat.Members = make(schemas.ChatMembers, 0)
+	// The name and the photo travel with the id, as in GetConversation:
+	// the caller redraws the member list from this answer and never asks who the people it just added are
+	rows, err := tx.Query(`SELECT u.id, u.username, u.photoId
+						   FROM chat_members AS cm JOIN users AS u ON u.id = cm.userId
+						   WHERE cm.chatId = ?;`, groupId)
 	// Error reading the members
 	if err != nil {
 		return schemas.ChatWithMembers{}, fmt.Errorf("cannot read the group members: %w", err)
@@ -90,9 +94,10 @@ func (db *appdbimpl) AddToGroup(userId schemas.UserId, groupId schemas.ChatId, u
 	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
-		var member schemas.UserId
+		var member schemas.User
 		// Error reading a row: a shorter list would be a wrong answer, not a partial one
-		if err := rows.Scan(&member); err != nil {
+		// The photo is the stored id here: only the api layer turns it into a URL
+		if err := rows.Scan(&member.Id, &member.Username, &member.Photo); err != nil {
 			return schemas.ChatWithMembers{}, fmt.Errorf("cannot read a group member: %w", err)
 		}
 
