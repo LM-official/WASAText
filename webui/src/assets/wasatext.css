@@ -1,0 +1,46 @@
+/* What the app needs on top of Bootstrap and the two template stylesheets.
+   Everything that belongs to one component lives in that component's scoped block;
+   this file holds only what is global.
+*/
+
+html, body {
+	height: 100%;
+}
+
+body {
+	/* dashboard.css sets .875rem, which is small for a conversation */
+	font-size: 0.95rem;
+	background-color: #f8f9fa;
+}
+
+/* The panes scroll on their own (see App.vue), so the window must not */
+body {
+	overflow: hidden;
+}
+
+@media (max-width: 767.98px) {
+	body {
+		overflow: auto;
+	}
+}
+
+/* Scrollbars: thin enough not to weigh on a list of conversations */
+.overflow-auto::-webkit-scrollbar,
+.chat-scroller::-webkit-scrollbar,
+.conversation-list ul::-webkit-scrollbar {
+	width: 8px;
+}
+
+.overflow-auto::-webkit-scrollbar-thumb,
+.chat-scroller::-webkit-scrollbar-thumb,
+.conversation-list ul::-webkit-scrollbar-thumb {
+	background-color: rgba(0, 0, 0, 0.2);
+	border-radius: 4px;
+}
+
+/* The template comments out the size in main.css, so the sprite icons would come out full size */
+.feather {
+	width: 16px;
+	height: 16px;
+	vertical-align: text-bottom;
+}
