@@ -632,6 +632,8 @@ has "16 born with no reaction"   '"comments":[]' "$FW"
 has "16 carries its own date"    '"date":"20' "$FW"
 has "16 user is the caller"      "\"user\":\"$A\"" "$FW"
 hasnt "16 user is not the source sender" "\"user\":\"$B\"" "$FW"
+has "16 copy is marked forwarded" '"forwarded":true' "$FW"
+hasnt "16 source is not marked forwarded" '"forwarded"' "$SRC_TEXT"
 if [ "$(echo "$FW" | id)" != "$MS" ]; then ok; else no "15 new id, not the source id" "$MS"; fi
 FWID=$(echo "$FW" | id)
 FWDATE=$(echo "$FW" | sed 's/.*"date":"\([^"]*\)".*/\1/')
@@ -645,10 +647,12 @@ eq "16 sender caught up to the exact copy date" \
 FWP=$(body POST /chats/$PD/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MPH\"}")
 has   "16 exact photo URL copied"     "\"photo\":\"$MPHOTO\"" "$FWP"
 hasnt "16 no text key on photo-only" '"text"' "$FWP"
+has   "16 photo copy is marked forwarded" '"forwarded":true' "$FWP"
 
 FWB=$(body POST /chats/$PD/forwards -H "$AU" -H "$JS" -d "{\"messageId\":\"$MB\"}")
 has "16 both fields copied, text"  '"text":"both fields"' "$FWB"
 has "16 both fields copied, exact photo" "\"photo\":\"$MBPHOTO\"" "$FWB"
+has "16 combined copy is marked forwarded" '"forwarded":true' "$FWB"
 eq  "16 forwarding creates no photo file" "$PHOTOS15" "$(ls db/photos | wc -l | tr -d ' ')"
 
 # comments belong to the source row and are not copied

@@ -182,15 +182,21 @@ ne  "S16 the copy has a new id" "$MS" "$MF"
 eq  "S16 the copy reuses the exact photo" "$PSRC" "$PFWD"
 has "S16 the copy carries the source text" '"text":"forwarded across chats"' "$FWD"
 has "S16 the caller is the copy's sender" "\"user\":\"$A\"" "$FWD"
+has "S16 the copy is marked forwarded" '"forwarded":true' "$FWD"
 SRC_AFTER=$(body GET /chats/$PS -H "$AU")
 has "S16 the source message remains in its chat" "\"id\":\"$MS\"" "$SRC_AFTER"
 has "S16 the source keeps its original sender" "\"user\":\"$B\"" "$SRC_AFTER"
+hasnt "S16 the source is not marked forwarded" '"forwarded"' "$SRC_AFTER"
 LIST=$(body GET /me/chats -H "$CU")
 has "S16 the destination preview is the copy" "\"snippet\":{\"id\":\"$MF\"" "$LIST"
 has "S16 its preview is received before C opens it" '"state":"received"' "$LIST"
+has "S16 its preview is marked forwarded" '"forwarded":true' "$LIST"
 DEST=$(body GET /chats/$PD -H "$CU")
 has "S16 the opened destination contains the copy" "\"id\":\"$MF\"" "$DEST"
 has "S16 the opened destination carries the same photo" "\"photo\":\"/photos/$PFWD\"" "$DEST"
+has "S16 the opened destination keeps the forwarded marker" '"forwarded":true' "$DEST"
+REACTED_FORWARD=$(body PUT /chats/$PD/messages/$MF/comments/me -H "$CU" -H "$JS" -d '{"emoji":"👍"}')
+has "S16 reacting keeps the forwarded marker" '"forwarded":true' "$REACTED_FORWARD"
 has "S16 the preview becomes read after C opens it" '"state":"read"' "$(body GET /me/chats -H "$CU")"
 
 echo "S17 — reactions update one message without creating another or changing its preview"

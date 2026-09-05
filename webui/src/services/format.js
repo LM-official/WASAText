@@ -84,11 +84,12 @@ export function sameDay(a, b) {
 export function snippetText(snippet) {
 	if (!snippet || !snippet.content) return ''
 	// absent = undefined = false
+	const prefix = snippet.forwarded ? 'Forwarded · ' : ''
 	const emoji = snippet.content.emoji
 	const text = previewText(snippet.content.text)
-	if (emoji && text) return `${emoji} ${text}`
-	if (emoji) return emoji
-	return text
+	if (emoji && text) return `${prefix}${emoji} ${text}`
+	if (emoji) return `${prefix}${emoji}`
+	return `${prefix}${text}`
 }
 
 // A message longer than the cap reaches the client already cut, and the cut falls wherever the 50th character happens to be,

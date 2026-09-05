@@ -104,7 +104,7 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	// so a chat of any length is read in the same bounded time,
 	// and rowid breaks the tie by insertion order between two messages that share an instant
 	chat.Messages = make(schemas.Messages, 0)
-	messageRows, err := tx.Query(`SELECT m.id, m.userId, m.date, m.text, m.photoId, m.replyTo,
+	messageRows, err := tx.Query(`SELECT m.id, m.userId, m.date, m.text, m.photoId, m.replyTo, m.forwarded,
 										 -- A message is read (rm) once no member of the chat is left behind it,
 										 -- which is a fact about the members and not about the caller:
 										 -- the same message reads the same to everybody
@@ -133,7 +133,7 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 		var message schemas.Message
 
 		// Error reading a row: a shorter list would be a wrong answer, not a partial one
-		if err := messageRows.Scan(&message.Id, &message.User, &msgDate, &msgText, &msgPhoto, &msgReplyTo, &isRead); err != nil {
+		if err := messageRows.Scan(&message.Id, &message.User, &msgDate, &msgText, &msgPhoto, &msgReplyTo, &message.Forwarded, &isRead); err != nil {
 			return schemas.ChatDetail{}, fmt.Errorf("cannot read a message of the chat %q: %w", chatId, err)
 		}
 		// A date the schema cannot have written: the row is broken, not the request

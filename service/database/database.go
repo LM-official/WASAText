@@ -156,6 +156,9 @@ func New(db *sql.DB) (AppDatabase, error) {
 		-- It is always a message of the same chat:
 		-- a quote of something the readers here cannot open would be a reference to nothing, so sendMessage refuses it
 		replyTo TEXT,
+		-- A forwarded copy must remain distinguishable after polling and restarts.
+		-- Ordinary messages use the default; forwardMessage writes 1.
+		forwarded INTEGER NOT NULL DEFAULT 0 CHECK (forwarded IN (0, 1)),
 		-- An empty message is not allowed
 		CHECK (text IS NOT NULL OR photoId IS NOT NULL),
 		-- Dropping a chat drops its messages
@@ -188,10 +191,53 @@ func New(db *sql.DB) (AppDatabase, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error creating database: %w", err)
 	}
+	if err := ensureMessageForwardedColumn(db); err != nil {
+		return nil, err
+	}
 
 	return &appdbimpl{
 		c: db,
 	}, nil
+}
+
+// ensureMessageForwardedColumn upgrades databases created before messages carried
+// a persistent forwarded marker. CREATE TABLE IF NOT EXISTS cannot add a column
+// to an existing table, so the schema is inspected before applying the additive migration.
+func ensureMessageForwardedColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(messages);`)
+	if err != nil {
+		return fmt.Errorf("cannot inspect messages schema: %w", err)
+	}
+
+	found := false
+	for rows.Next() {
+		var columnId, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&columnId, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("cannot inspect a messages column: %w", err)
+		}
+		if name == "forwarded" {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("cannot inspect messages schema: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("cannot close messages schema rows: %w", err)
+	}
+	if found {
+		return nil
+	}
+
+	_, err = db.Exec(`ALTER TABLE messages ADD COLUMN forwarded INTEGER NOT NULL DEFAULT 0 CHECK (forwarded IN (0, 1));`)
+	if err != nil {
+		return fmt.Errorf("cannot add the forwarded marker to messages: %w", err)
+	}
+	return nil
 }
 
 func (db *appdbimpl) Ping() error {

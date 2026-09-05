@@ -90,7 +90,7 @@ func (db *appdbimpl) ForwardMessage(userId schemas.UserId, chatId schemas.ChatId
 	dateText := globaltime.Format(date)
 
 	// The forwarded message is a new row in the destination chat, carrying the same content as the source
-	_, err = tx.Exec(`INSERT INTO messages (id, chatId, userId, text, photoId, date) VALUES (?, ?, ?, ?, ?, ?);`,
+	_, err = tx.Exec(`INSERT INTO messages (id, chatId, userId, text, photoId, date, forwarded) VALUES (?, ?, ?, ?, ?, ?, 1);`,
 		newId, chatId, userId, srcText, srcPhotoId, dateText)
 	// Error inserting the message
 	if err != nil {
@@ -122,10 +122,11 @@ func (db *appdbimpl) ForwardMessage(userId schemas.UserId, chatId schemas.ChatId
 
 	message := schemas.Message{
 		MessageBase: schemas.MessageBase{
-			Id:    newId,
-			User:  userId,
-			Date:  date,
-			State: state,
+			Id:        newId,
+			User:      userId,
+			Date:      date,
+			State:     state,
+			Forwarded: true,
 		},
 		Content: schemas.MessageContent{
 			Text: schemas.MessageText(srcText.String),

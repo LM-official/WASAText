@@ -296,7 +296,6 @@ components:                                           # Reusable components
         - $ref: '#/components/schemas/PrivateChatKind'
 
 
-
     MessageBase:
       description: 'Base structure for messages and snippets'
       type: object
@@ -330,6 +329,12 @@ components:                                           # Reusable components
           enum: [received, read]
           example: 'read'
           # EXTRA: sent: message sent by the user but not received yet by all chat members
+        forwarded:
+          description: |
+            True when this message was created by forwarding another message;
+            absent for an ordinary message
+          type: boolean
+          example: true
       required: [id, date, user, state]
       
     MessageText:
@@ -947,6 +952,7 @@ paths:                                                # Rest endpoints
                       date: '2025-11-15T18:30:00.000Z'
                       user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                       state: 'read'
+                      forwarded: true                    # The preview preserves the marker of its message
                   - id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
                     chatType: 'group'
                     name: 'Weekend Trip'
@@ -1018,6 +1024,7 @@ paths:                                                # Rest endpoints
                     date: '2025-11-15T18:35:00.000Z'
                     user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                     state: 'received'                 # Bob has not opened the chat since it arrived
+                    forwarded: true                  # The opened chat exposes the persistent marker
                     comments: []                      # Nobody reacted to it, and the list is never absent
                   - id: '3fa85f64-5717-4562-b3fc-2c963f66afa6'
                     content:                          # Text only: no photo to carry
@@ -1110,7 +1117,8 @@ paths:                                                # Rest endpoints
         Copies an existing message into a destination chat.
         The authenticated user must be a member of both the source chat and the destination chat.
         The source message is left untouched. The forwarded copy has a new id and date,
-        identifies the authenticated user as its sender, carries the source text and/or photo, and has no comments.
+        identifies the authenticated user as its sender, carries the source text and/or photo, has no comments,
+        and carries `forwarded: true` so clients can clearly distinguish it from an ordinary message.
         Forwarding catches the sender up with the destination chat, since writing in it means having seen what is above.
         Its state is therefore computed like that of a newly sent message:
         it is 'read' when no other destination member is behind it, and 'received' otherwise.
@@ -1140,6 +1148,7 @@ paths:                                                # Rest endpoints
                 date: '2025-11-15T19:00:00.000Z'
                 user: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
                 state: 'received'
+                forwarded: true
                 comments: []
         '400':                                        # Invalid destination id, invalid body/source id,
           $ref: '#/components/responses/BadRequest'   # or a destination chat that is already full

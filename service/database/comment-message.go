@@ -39,11 +39,12 @@ func (db *appdbimpl) CommentMessage(userId schemas.UserId, chatId schemas.ChatId
 	var msgUser schemas.UserId
 	var msgText, msgPhotoId, msgReplyTo sql.NullString
 	var msgDateText string
+	var msgForwarded bool
 	var isMember bool
-	err = tx.QueryRow(`SELECT m.chatId, m.userId, m.text, m.photoId, m.date, m.replyTo,
-							  EXISTS(SELECT 1 FROM chat_members WHERE chatId = m.chatId AND userId = ?)
-					   FROM messages AS m WHERE m.id = ?;`,
-		userId, messageId).Scan(&msgChatId, &msgUser, &msgText, &msgPhotoId, &msgDateText, &msgReplyTo, &isMember)
+	err = tx.QueryRow(`SELECT m.chatId, m.userId, m.text, m.photoId, m.date, m.replyTo, m.forwarded,
+								  EXISTS(SELECT 1 FROM chat_members WHERE chatId = m.chatId AND userId = ?)
+						   FROM messages AS m WHERE m.id = ?;`,
+		userId, messageId).Scan(&msgChatId, &msgUser, &msgText, &msgPhotoId, &msgDateText, &msgReplyTo, &msgForwarded, &isMember)
 	// No message owns that id
 	if errors.Is(err, sql.ErrNoRows) {
 		return schemas.Message{}, false, ErrMessageNotFound
@@ -143,10 +144,11 @@ func (db *appdbimpl) CommentMessage(userId schemas.UserId, chatId schemas.ChatId
 
 	message := schemas.Message{
 		MessageBase: schemas.MessageBase{
-			Id:    messageId,
-			User:  msgUser,
-			Date:  date,
-			State: state,
+			Id:        messageId,
+			User:      msgUser,
+			Date:      date,
+			State:     state,
+			Forwarded: msgForwarded,
 		},
 		Content: schemas.MessageContent{
 			Text:  schemas.MessageText(msgText.String),

@@ -131,7 +131,7 @@ type ChatDetail struct {
 }
 
 // ---------- MESSAGE ----------
-// Table: messages (id, chatId, userId, text, photoId, date)
+// Table: messages (id, chatId, userId, text, photoId, date, replyTo, forwarded)
 // The chatId column has no field here: the chat is already in the URL of every message endpoint
 // State has no column: it is computed from chat_members.lastReadDate at every read,
 // because it is a fact about who belongs to the chat now and that set changes under messages nobody touched
@@ -152,10 +152,11 @@ const ChatMessagesPageSize = 500
 
 // MessageBase is everything a message and its snippet have in common
 type MessageBase struct {
-	Id    MessageId    `json:"id"`
-	User  UserId       `json:"user"`
-	Date  time.Time    `json:"date"`
-	State MessageState `json:"state"`
+	Id        MessageId    `json:"id"`
+	User      UserId       `json:"user"`
+	Date      time.Time    `json:"date"`
+	State     MessageState `json:"state"`
+	Forwarded bool         `json:"forwarded,omitempty"`
 }
 
 // MessageTextMaxChars is the maximum length of a message text

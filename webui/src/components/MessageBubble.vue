@@ -111,6 +111,10 @@ export default {
         <!-- Who wrote it: only in a group, and only when it is not the caller -->
         <div v-if="isGroup && !mine" class="message-sender">{{ senderName }}</div>
 
+        <div v-if="message.forwarded" class="message-forwarded">
+          <span aria-hidden="true">↪</span> Forwarded
+        </div>
+
         <!-- What it answers. `replyTo` is on the message whether or not the page holds what it names,
 			so the quote is drawn either way and says when it cannot be resolved -->
         <QuotedMessage
@@ -209,6 +213,13 @@ export default {
 	border-radius: 0.75rem;
 	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
 	word-wrap: break-word;
+}
+
+.message-forwarded {
+	font-size: 0.75rem;
+	font-style: italic;
+	color: #6c757d;
+	margin-bottom: 0.15rem;
 }
 
 .message-mine {

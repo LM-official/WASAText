@@ -31,7 +31,7 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.ChatSumm
 									-- The columns the snippet is built from, taken whole from the last message (lm)
 									-- They are NULL together while the chat holds no message,
 									-- which is what tells the caller apart from a message whose own text or photo is missing
-									lm.id, lm.userId, lm.date, lm.text, lm.photoId,
+									lm.id, lm.userId, lm.date, lm.text, lm.photoId, lm.forwarded,
 									-- A message is read (rm) once no member of the chat is left behind it
 									-- The sender needs no exception here: sending catches it up to its own message,
 									-- so its date is never older than the one it wrote
@@ -69,11 +69,12 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.ChatSumm
 		var chat schemas.ChatSummary
 		// The columns of the last message are NULL together while the chat holds no message
 		var msgId, msgUser, msgDate, msgText, msgPhoto sql.NullString
+		var msgForwarded sql.NullBool
 		var isRead bool
 
 		// Error reading a row: a shorter list would be a wrong answer, not a partial one
 		if err := rows.Scan(&chat.Id, &chat.Type, &chat.Name, &chat.Photo,
-			&msgId, &msgUser, &msgDate, &msgText, &msgPhoto, &isRead); err != nil {
+			&msgId, &msgUser, &msgDate, &msgText, &msgPhoto, &msgForwarded, &isRead); err != nil {
 			return schemas.ChatSummaries{}, fmt.Errorf("cannot read a chat of user %q: %w", userId, err)
 		}
 		// Invalid last message, snippet is nil by default
@@ -107,10 +108,11 @@ func (db *appdbimpl) GetMyConversations(userId schemas.UserId) (schemas.ChatSumm
 		// Create the snippet from last message
 		snippet := schemas.Snippet{
 			MessageBase: schemas.MessageBase{
-				Id:    schemas.MessageId(msgId.String),
-				User:  schemas.UserId(msgUser.String),
-				Date:  date,
-				State: schemas.MessageStateReceived,
+				Id:        schemas.MessageId(msgId.String),
+				User:      schemas.UserId(msgUser.String),
+				Date:      date,
+				State:     schemas.MessageStateReceived,
+				Forwarded: msgForwarded.Bool,
 			},
 			Content: content,
 		}
