@@ -1,0 +1,58 @@
+# Dockerfile.backend — the WASAText API server.
+#
+# Two stages: the first one holds the Go toolchain and compiles the executable,
+# the second one keeps nothing but the executable itself.
+# The image that ships is the second one, so the compiler,
+# the sources and the module cache never reach it.
+# Build from the repository root so that COPY can see cmd/, service/ and vendor/:
+# docker build -f Dockerfile.backend -t wasatext-backend .
+
+# Build stage
+# "AS builder" names this temporary stage for the COPY --from instruction below.
+FROM golang:1.23-bookworm AS builder
+
+# WORKDIR creates /src if needed and makes following relative paths start there.
+WORKDIR /src/
+
+# Copy the whole repository: the sources, and the dependencies under vendor/
+# Docker filters the repository through .dockerignore before sending it to this build stage.
+COPY . .
+
+# Build the executable.
+#
+# CGO stays enabled: github.com/mattn/go-sqlite3 is a C library behind a Go API, 
+# and a binary built without it cannot open the database at all.
+# -mod=vendor keeps the build off the network: every dependency is already in vendor/.
+RUN CGO_ENABLED=1 go build -mod=vendor -o /app/webapi ./cmd/webapi
+
+# Debian, and the same Debian release the builder is based on:
+# CGO links the executable against the glibc of the image it was compiled in,
+# and an older release would not have the version it asks for.
+FROM debian:bookworm
+
+# The API listens on 3000, and its debug endpoint on 4000.
+# EXPOSE is metadata; `docker run -p 3000:3000 -p 4000:4000 ...` publishes the ports.
+EXPOSE 3000 4000
+
+# WORKDIR creates /app if needed and makes following relative paths start there.
+WORKDIR /app/
+
+# Copy the executable from the builder stage
+COPY --from=builder /app/webapi ./
+
+# The database and the photos are written under ./db, which the API creates on its first run
+# but only inside a directory that already exists. Keep them across containers with a volume:
+# docker run -p 3000:3000 -v wasatext-db:/app/db wasatext-backend
+#
+# The default photo is copied in because it is the one photo the API never writes:
+# every user and every group without a photo of its own is given its id (schemas.DefaultPhotoId),
+# and the request for it is answered from this directory.
+# Copying it also creates /app/db/photos,
+# so an empty named volume mounted here is initialized with that file on its first use.
+# The development database and uploaded photos are excluded by .dockerignore and are not shipped.
+COPY --from=builder /src/db/photos/00000000-0000-4000-8000-000000000000 /app/db/photos/
+
+# Executable command
+# JSON-array form runs the server directly so it receives container stop signals correctly.
+# A command supplied to `docker run` can override this default.
+CMD ["/app/webapi"]

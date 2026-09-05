@@ -1,0 +1,48 @@
+# Dockerfile.frontend — the WASAText web interface.
+#
+# Two stages: the first one builds the Vue sources into plain HTML, CSS and JavaScript,
+# the second one is a web server holding those files.
+# Node is only needed to build, so it stays behind.
+# Build from the repository root because COPY paths are relative to the build context:
+# docker build -f Dockerfile.frontend -t wasatext-frontend .
+
+# Build stage
+# This named stage is temporary and is not part of the image users run.
+FROM node:20 AS builder
+
+# WORKDIR creates /app if needed and makes following relative paths start there.
+WORKDIR /app
+
+# Only the interface is needed here, not the Go sources
+# .dockerignore removes local node_modules and dist so they are produced cleanly in this stage.
+COPY webui webui
+
+# WORKDIR creates /app/webui if needed and makes following relative paths start there.
+WORKDIR /app/webui
+
+# The project pins Yarn 4 through the "packageManager" field of package.json,
+# and carries both the Yarn release and the package cache inside webui/.yarn,
+# so this is the exact version the project was developed with,
+# and the install reads the packages from the repository instead of the network
+RUN corepack enable
+
+# --immutable fails instead of rewriting yarn.lock, which is what makes this build reproducible:
+# the packages installed here are the ones the lockfile names
+RUN yarn install --immutable --immutable-cache
+
+# vite build --mode production, writing the site into webui/dist
+RUN yarn run build-prod
+
+# Final stage
+FROM nginx:stable
+
+# Copy the built site where nginx serves from. The router uses hash URLs ('#/chats/...'),
+# so the server never sees a path of its own and the default nginx configuration is enough
+COPY --from=builder /app/webui/dist /usr/share/nginx/html
+
+# nginx serves on 80. The API is a separate container reached by the browser at http://localhost:3000,
+# the address compiled into the bundle by vite.config.js
+# EXPOSE documents the port; publish it with, for example, `docker run -p 8080:80 ...`.
+EXPOSE 80
+
+# No CMD is needed here: the nginx base image already starts nginx in the foreground.

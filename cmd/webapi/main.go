@@ -32,6 +32,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/MercuriLorenzo/WASAText/service/api"
@@ -84,6 +85,13 @@ func run() error {
 
 	// Start Database
 	logger.Println("initializing database support")
+	// SQLite creates the database file, but it does not create missing parent directories.
+	// Ensure the configured directory exists so a fresh container (or an empty mounted volume)
+	// can start without requiring the filesystem to be prepared externally.
+	if err := os.MkdirAll(filepath.Dir(cfg.DB.Filename), 0o755); err != nil {
+		logger.WithError(err).Error("error creating SQLite DB directory")
+		return fmt.Errorf("creating SQLite directory: %w", err)
+	}
 	// _foreign_keys=on in the DSN: SQLite disables foreign keys by default, and setting the pragma
 	// on a single connection would not apply to the other connections opened by the pool
 	//

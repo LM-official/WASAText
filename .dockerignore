@@ -1,0 +1,30 @@
+# What the two images do not need.
+#
+# Docker applies this file to the repository-root build context before processing either Dockerfile.
+# Excluding generated files and local state makes builds smaller
+# and prevents COPY from including development-only data in an intermediate stage.
+#
+# Dockerfile.backend copies the whole repository to reach the Go sources and vendor/,
+# so without this file the database of the development machine,
+# the photos it holds and the local node_modules would all be copied into the build
+# and end up inside the image.
+.git
+**/.gitignore
+**/.DS_Store
+**/.vscode
+webui/dist
+
+# State written by a local run, not sources: the image creates its own empty /app/db.
+# The default photo is the exception: schemas.DefaultPhotoId names it
+# for every user and every group that has no photo of its own,
+# and nothing in the code ever writes it,
+# so the file itself has to reach the image
+db/
+!db/photos/00000000-0000-4000-8000-000000000000
+
+# Local validators
+validator.md
+.spectral.js
+.golangci.yml
+webui/eslint.config.mjs
+webui/node_modules
