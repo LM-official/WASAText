@@ -13,12 +13,12 @@ import (
 // CreateGroup creates a group named name and showing photoId, whose members are userIds plus creator
 // The request carries the other members only: the creator belongs to the group it opens,
 // so it is added here and never travels in the body
-func (db *appdbimpl) CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatId, error) {
+func (db *appdbimpl) CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatWithMembers, error) {
 	// Generate the new UUID
 	newUUID, err := uuid.NewV4()
 	// Error generating the UUID
 	if err != nil {
-		return schemas.ChatId(""), fmt.Errorf("cannot generate a new UUID: %w", err)
+		return schemas.ChatWithMembers{}, fmt.Errorf("cannot generate a new UUID: %w", err)
 	}
 	newId := schemas.ChatId(newUUID.String())
 
@@ -42,7 +42,7 @@ func (db *appdbimpl) CreateGroup(creator schemas.UserId, userIds schemas.Members
 	// and members without a chat would break their foreign key
 	tx, err := db.c.Begin()
 	if err != nil {
-		return schemas.ChatId(""), fmt.Errorf("cannot start the transaction: %w", err)
+		return schemas.ChatWithMembers{}, fmt.Errorf("cannot start the transaction: %w", err)
 	}
 	// Undo everything unless the commit below is reached
 	defer func() { _ = tx.Rollback() }()
@@ -51,19 +51,37 @@ func (db *appdbimpl) CreateGroup(creator schemas.UserId, userIds schemas.Members
 	_, err = tx.Exec(`INSERT INTO chats (id, chatType, name, photoId, pairKey) VALUES (?, ?, ?, ?, NULL);`, newId, schemas.ChatTypeGroup, name, photoId)
 	// Error inserting the new chat
 	if err != nil {
-		return schemas.ChatId(""), fmt.Errorf("cannot insert the new chat %q: %w", newId, err)
+		return schemas.ChatWithMembers{}, fmt.Errorf("cannot insert the new chat %q: %w", newId, err)
 	}
 
 	// New chat created, update the memberships
 	_, err = tx.Exec(`INSERT INTO chat_members (chatId, userId, lastReadDate) VALUES `+placeholders+`;`, args...)
 	// Error inserting the members
 	if err != nil {
-		return schemas.ChatId(""), fmt.Errorf("cannot insert the members of the new chat %q: %w", newId, err)
+		return schemas.ChatWithMembers{}, fmt.Errorf("cannot insert the members of the new chat %q: %w", newId, err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return schemas.ChatId(""), fmt.Errorf("cannot commit the transaction: %w", err)
+		return schemas.ChatWithMembers{}, fmt.Errorf("cannot commit the transaction: %w", err)
 	}
 
-	return newId, nil
+	// Nothing here is read back: the commit above already confirms every tuple went in,
+	// so the group this returns is exactly what was just written, held from the arguments and never re-queried
+	// The reply carries the creator first and then whoever the request asked for, in the order they were inserted
+	members := make(schemas.Members, 0, len(userIds)+1)
+	members = append(members, creator)
+	members = append(members, userIds...)
+
+	chat := schemas.ChatWithMembers{
+		ChatBase: schemas.ChatBase{
+			Id:   newId,
+			Type: schemas.ChatTypeGroup,
+			Name: name,
+			// photoId travels as the id it was inserted as; only the api layer turns it into a PhotoURL
+			Photo: schemas.PhotoURL(photoId),
+		},
+		Members: members,
+	}
+
+	return chat, nil
 }

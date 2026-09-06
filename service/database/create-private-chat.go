@@ -22,14 +22,14 @@ func pairKey(userId1 schemas.UserId, userId2 schemas.UserId) string {
 
 // CreatePrivateChat returns the private chat of the two given users, creating it if it does not exist yet
 // The boolean is true when the chat was already there, so that the api layer can answer 200 instead of 201
-func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.UserId) (schemas.ChatId, bool, error) {
+func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.UserId) (schemas.ChatWithMembers, bool, error) {
 	key := pairKey(userId1, userId2)
 
 	// Generate the new UUID
 	newUUID, err := uuid.NewV4()
 	// Error generating the UUID
 	if err != nil {
-		return schemas.ChatId(""), false, fmt.Errorf("cannot generate a new UUID: %w", err)
+		return schemas.ChatWithMembers{}, false, fmt.Errorf("cannot generate a new UUID: %w", err)
 	}
 	newId := schemas.ChatId(newUUID.String())
 
@@ -38,7 +38,7 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 	// and members without a chat would break their foreign key
 	tx, err := db.c.Begin()
 	if err != nil {
-		return schemas.ChatId(""), false, fmt.Errorf("cannot start the transaction: %w", err)
+		return schemas.ChatWithMembers{}, false, fmt.Errorf("cannot start the transaction: %w", err)
 	}
 	// Undo everything unless the commit below is reached
 	defer func() { _ = tx.Rollback() }()
@@ -50,20 +50,41 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 						 ON CONFLICT(pairKey) DO NOTHING;`, newId, schemas.ChatTypePrivate, key)
 	// Error inserting the new chat
 	if err != nil {
-		return schemas.ChatId(""), false, fmt.Errorf("cannot insert the new chat %q: %w", newId, err)
+		return schemas.ChatWithMembers{}, false, fmt.Errorf("cannot insert the new chat %q: %w", newId, err)
 	}
 	written, err := res.RowsAffected()
 	if err != nil {
-		return schemas.ChatId(""), false, fmt.Errorf("cannot read the number of rows written for the new chat %q: %w", newId, err)
+		return schemas.ChatWithMembers{}, false, fmt.Errorf("cannot read the number of rows written for the new chat %q: %w", newId, err)
 	}
-	// No row written: this pair already owns a chat
+
+	// A private chat carries no name and no photo of its own: both are read from userId2,
+	// the other member as seen by userId1, which is what the client shows for this chat either way
+	var otherUsername schemas.Username
+	var otherPhotoId schemas.PhotoId
+
+	// No row written: this pair already owns a chat, and this transaction wrote nothing that needs to survive it
+	// The deferred Rollback above is enough to close it; nothing here is worth a Commit
 	if written == 0 {
 		var id schemas.ChatId
-		if err := tx.QueryRow(`SELECT id FROM chats WHERE pairKey = ?;`, key).Scan(&id); err != nil {
-			return schemas.ChatId(""), false, fmt.Errorf("cannot read the id of the chat already owned by the pair %q: %w", key, err)
+		err = tx.QueryRow(`SELECT c.id, u.username, u.photoId FROM chats AS c, users AS u
+						   WHERE c.pairKey = ? AND u.id = ?;`, key, userId2).Scan(&id, &otherUsername, &otherPhotoId)
+		// Error reading the already existing chat
+		if err != nil {
+			return schemas.ChatWithMembers{}, false, fmt.Errorf("cannot read the chat already owned by the pair %q: %w", key, err)
+		}
+
+		chat := schemas.ChatWithMembers{
+			ChatBase: schemas.ChatBase{
+				Id:   id,
+				Type: schemas.ChatTypePrivate,
+				Name: schemas.ChatName(otherUsername),
+				// photoId travels as the id it is stored as; only the api layer turns it into a PhotoURL
+				Photo: schemas.PhotoURL(otherPhotoId),
+			},
+			Members: schemas.Members{userId1, userId2},
 		}
 		// Chat already exists
-		return id, true, nil
+		return chat, true, nil
 	}
 
 	// New chat created, update the memberships
@@ -74,12 +95,30 @@ func (db *appdbimpl) CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.U
 		newId, userId1, joinDate, newId, userId2, joinDate)
 	// Error inserting the members
 	if err != nil {
-		return schemas.ChatId(""), false, fmt.Errorf("cannot insert the members of the new chat %q: %w", newId, err)
+		return schemas.ChatWithMembers{}, false, fmt.Errorf("cannot insert the members of the new chat %q: %w", newId, err)
+	}
+
+	// The name and photo this chat is shown with, borrowed from userId2 since the chats row holds neither
+	err = tx.QueryRow(`SELECT username, photoId FROM users WHERE id = ?;`, userId2).Scan(&otherUsername, &otherPhotoId)
+	// Error reading the other member's profile
+	if err != nil {
+		return schemas.ChatWithMembers{}, false, fmt.Errorf("cannot read the profile of user %q: %w", userId2, err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return schemas.ChatId(""), false, fmt.Errorf("cannot commit the transaction: %w", err)
+		return schemas.ChatWithMembers{}, false, fmt.Errorf("cannot commit the transaction: %w", err)
 	}
 
-	return newId, false, nil
+	chat := schemas.ChatWithMembers{
+		ChatBase: schemas.ChatBase{
+			Id:   newId,
+			Type: schemas.ChatTypePrivate,
+			Name: schemas.ChatName(otherUsername),
+			// photoId travels as the id it is stored as; only the api layer turns it into a PhotoURL
+			Photo: schemas.PhotoURL(otherPhotoId),
+		},
+		Members: schemas.Members{userId1, userId2},
+	}
+
+	return chat, false, nil
 }

@@ -1,58 +1,34 @@
-# Dockerfile.backend — the WASAText API server.
-#
-# Two stages: the first one holds the Go toolchain and compiles the executable,
-# the second one keeps nothing but the executable itself.
-# The image that ships is the second one, so the compiler,
-# the sources and the module cache never reach it.
-# Build from the repository root so that COPY can see cmd/, service/ and vendor/:
-# docker build -f Dockerfile.backend -t wasatext-backend .
+# Compile the API with Go 1.22 on Debian Bookworm; this is the temporary builder stage.
+FROM golang:1.22-bookworm AS builder
 
-# Build stage
-# "AS builder" names this temporary stage for the COPY --from instruction below.
-FROM golang:1.23-bookworm AS builder
+# Create /src and use it as the working directory for copying and compiling the project.
+WORKDIR /src
 
-# WORKDIR creates /src if needed and makes following relative paths start there.
-WORKDIR /src/
+# Install the C compiler and headers required by go-sqlite3, then remove package index files.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the whole repository: the sources, and the dependencies under vendor/
-# Docker filters the repository through .dockerignore before sending it to this build stage.
+# Copy the repository sources and vendor/ after .dockerignore filters out local data and artifacts.
 COPY . .
 
-# Build the executable.
-#
-# CGO stays enabled: github.com/mattn/go-sqlite3 is a C library behind a Go API, 
-# and a binary built without it cannot open the database at all.
-# -mod=vendor keeps the build off the network: every dependency is already in vendor/.
+# Enable CGO for SQLite and use vendored dependencies; write the executable to /app/webapi.
 RUN CGO_ENABLED=1 go build -mod=vendor -o /app/webapi ./cmd/webapi
 
-# Debian, and the same Debian release the builder is based on:
-# CGO links the executable against the glibc of the image it was compiled in,
-# and an older release would not have the version it asks for.
-FROM debian:bookworm
+# Use a smaller runtime with the same Debian release for compatibility with the CGO binary.
+FROM debian:bookworm-slim AS runtime
 
-# The API listens on 3000, and its debug endpoint on 4000.
-# EXPOSE is metadata; `docker run -p 3000:3000 -p 4000:4000 ...` publishes the ports.
-EXPOSE 3000 4000
+# Run the server from /app; Go defaults to /tmp for writable storage.
+WORKDIR /app
 
-# WORKDIR creates /app if needed and makes following relative paths start there.
-WORKDIR /app/
-
-# Copy the executable from the builder stage
+# Copy the compiled server without including the Go compiler or repository sources.
 COPY --from=builder /app/webapi ./
+# Ship the default user/group avatar; COPY also creates its parent directories.
+# Docker copies it into a fresh photo volume when Compose first mounts that volume here.
+COPY db/photos/00000000-0000-4000-8000-000000000000 /app/db/photos/00000000-0000-4000-8000-000000000000
 
-# The database and the photos are written under ./db, which the API creates on its first run
-# but only inside a directory that already exists. Keep them across containers with a volume:
-# docker run -p 3000:3000 -v wasatext-db:/app/db wasatext-backend
-#
-# The default photo is copied in because it is the one photo the API never writes:
-# every user and every group without a photo of its own is given its id (schemas.DefaultPhotoId),
-# and the request for it is answered from this directory.
-# Copying it also creates /app/db/photos,
-# so an empty named volume mounted here is initialized with that file on its first use.
-# The development database and uploaded photos are excluded by .dockerignore and are not shipped.
-COPY --from=builder /src/db/photos/00000000-0000-4000-8000-000000000000 /app/db/photos/
+# Document the API port; Compose publishes it on host port 3000.
+EXPOSE 3000
 
-# Executable command
-# JSON-array form runs the server directly so it receives container stop signals correctly.
-# A command supplied to `docker run` can override this default.
+# Start the API directly so it receives stop signals; Compose supplies its CFG_ settings.
 CMD ["/app/webapi"]

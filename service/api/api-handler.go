@@ -30,6 +30,8 @@ func (rt *_router) Handler() http.Handler {
 	rt.router.PUT("/groups/:groupId/photo", rt.wrap(rt.authenticate(rt.setGroupPhoto)))
 	rt.router.POST("/groups/:groupId/members", rt.wrap(rt.authenticate(rt.addToGroup)))
 	rt.router.DELETE("/groups/:groupId/members/me", rt.wrap(rt.authenticate(rt.leaveGroup)))
+	rt.router.POST("/users_lookup", rt.wrap(rt.authenticate(rt.lookupUsers)))
+	rt.router.GET("/groups/:groupId", rt.wrap(rt.authenticate(rt.getGroup)))
 
 	// Special routes
 	rt.router.GET("/liveness", rt.liveness)

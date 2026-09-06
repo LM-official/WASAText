@@ -74,7 +74,5 @@ func (rt *_router) addToGroup(w http.ResponseWriter, r *http.Request, ps httprou
 	// Response
 	// The base is embedded, so the photo id it carries is turned into a URL through it
 	chat.ChatBase = withChatPhotoURL(chat.ChatBase)
-	// Every member carries its own photo, the same way a user read on its own does
-	chat.Members = withMemberPhotoURLs(chat.Members)
 	writeJSON(w, ctx, http.StatusOK, chat)
 }

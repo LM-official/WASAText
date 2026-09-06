@@ -41,11 +41,19 @@ export async function doLogin(username) {
 
 // ---------- users ----------
 
-// getUser: the one read that turns an id back into a user.
+// getUser resolves one ID
 // Message senders, comment authors and chat members all travel as ids
 export async function getUser(userId) {
 	const res = await axios.get(`/users/${userId}`)
 	return res.data
+}
+
+// lookupUsers resolves a batch of profiles.
+// The server answers 200 with an empty list for unknown ids,
+// so the caller can batch without checking
+export async function lookupUsers(ids) {
+	const res = await axios.post('/users_lookup', { ids })
+	return res.data.users
 }
 
 // getUsers: prefix search, capped at 20 by the server
@@ -69,6 +77,12 @@ export async function setMyPhoto(file) {
 }
 
 // ---------- chats ----------
+
+// Group metadata has no message-read side effects
+export async function getGroup(groupId) {
+	const res = await axios.get(`/groups/${groupId}`)
+	return res.data
+}
 
 // getMyConversations: the homepage list, most recently active first, each with the preview of its last message.
 // A chat nobody has written in carries no snippet
@@ -131,11 +145,12 @@ export async function uncommentMessage(chatId, messageId) {
 
 // ---------- private chats and groups ----------
 
-// createPrivateChat: 201 for a new chat, 200 for the one that was already there. 
+// createPrivateChat: 201 for a new chat, 200 for the one that was already there.
+// Both return the chat metadata and member IDs (ChatWithMembers).
 // The pair is one row either way, so calling it twice can never open two chats
 export async function createPrivateChat(otherUserId) {
 	const res = await axios.post('/private_chats', { id: otherUserId })
-	return res.data.id
+	return res.data
 }
 
 // createGroup: multipart with a JSON `data` part and an optional `photoFile`.
@@ -143,13 +158,14 @@ export async function createPrivateChat(otherUserId) {
 // a blob would be sent with a filename, which makes it a file part,
 // which the server's r.FormValue("data") cannot see (-> 400 invalid data part).
 // Without a photo the group starts from the default.
-// The creator must not be in `members`: the server adds it
+// The creator must not be in `members`: the server adds it.
+// Returns the chat metadata and member IDs, including the creator (ChatWithMembers)
 export async function createGroup({ name, members, file }) {
 	const fd = new FormData()
 	fd.append('data', JSON.stringify({ name, members }))
 	if (file) fd.append('photoFile', file)
 	const res = await axios.post('/groups', fd, { timeout: PHOTO_TIMEOUT })
-	return res.data.id
+	return res.data
 }
 
 // setGroupName: every member may rename, a group has no owner.

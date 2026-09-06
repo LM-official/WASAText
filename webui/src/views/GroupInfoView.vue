@@ -1,30 +1,14 @@
 <script>
-import {
-	getConversation,
-	setGroupName,
-	setGroupPhoto,
-	addToGroup,
-	leaveGroup,
-	errorMessage,
-} from '../services/api.js'
+import { getGroup, setGroupName, setGroupPhoto, addToGroup, leaveGroup, errorMessage } from '../services/api.js'
 import { session } from '../services/session.js'
-import { rememberAll, remember } from '../services/users.js'
+import { profile, refreshMany, remember } from '../services/users.js'
 import { observeGroupMembers } from '../services/membership-notices.js'
 import { countChars } from '../services/format.js'
 import AuthPhoto from '../components/AuthPhoto.vue'
 import UserSearch from '../components/UserSearch.vue'
 
-// Everything a group can be changed into.
-//
-// A group has no owner: every member may rename it, replace its photo and add anybody,
-// and nobody can remove anybody but themselves, leaveGroup is the only way out and it only ever removes the caller.
-// The last member to leave takes the group with it.
-//
-// The members arrive with their name and photo, so the page draws them without asking who they are,
-// and every reply that changes the group carries the list again.
-// What it does not do is re-read the conversation on a timer to catch a rename made elsewhere:
-// that read marks the chat read behind the reader's back, which is what the checkmarks of everybody who wrote in it are made of.
-// A name here is the one the group had when the page was opened
+// Group info refreshes on entry and return to the tab/window, never on an interval.
+// Its metadata endpoint does not read messages or advance read receipts
 export default {
 	// Reusable components
 	components: { AuthPhoto, UserSearch },
@@ -44,149 +28,194 @@ export default {
 			leaving: false,
 			ok: null,
 			accept: 'image/png,image/jpeg,image/gif,image/webp',
+			returnTimer: null,
+			refreshPromise: null,
+			refreshPending: false,
+			viewVersion: 0,
+			disposed: false,
 		}
 	},
 	// Values derived from reactive values
 	computed: {
-		session() {
-			return session
-		},
-		chatId() {
-			return this.$route.params.groupId
-		},
-		nameCount() {
-			return countChars(this.name)
-		},
-		nameValid() {
-			return this.nameCount >= 1 && this.nameCount <= 100
-		},
-		nameUnchanged() {
-			// && gives back its left side when that is falsy: without !! this is null while loading
-			return !!this.chat && this.name.trim() === this.chat.name
-		},
-		// The caller first, then everybody else by name
+		session() { return session },
+		chatId() { return this.$route.params.groupId },
+		nameCount() { return countChars(this.name) },
+		nameValid() { return this.nameCount >= 1 && this.nameCount <= 100 },
+		nameUnchanged() { return !!this.chat && this.name.trim() === this.chat.name },
+		busy() { return this.savingName || this.savingPhoto || this.adding || this.leaving },
 		members() {
-			if (!this.chat) return []
-			return [...this.chat.members].sort((a, b) => {
+			return this.memberIds.map(profile).sort((a, b) => {
+				if (a.id === b.id) return 0
 				if (a.id === session.userId) return -1
 				if (b.id === session.userId) return 1
-				return a.username.localeCompare(b.username)
+				return a.username.localeCompare(b.username) || a.id.localeCompare(b.id)
 			})
 		},
-		// observeGroupMembers diffs and saves ids, and the search excludes by id
-		memberIds() {
-			return this.chat ? this.chat.members.map((m) => m.id) : []
-		},
-		full() {
-			// !! answers false before the group is read, where the && alone would say null
-			return !!this.chat && this.chat.members.length >= 100
-		},
+		memberIds() { return this.chat ? this.chat.members : [] },
+		full() { return this.memberIds.length >= 100 },
 	},
 	// Run when a reactive value changes
 	watch: {
 		chatId: {
 			immediate: true,
 			handler() {
+				this.viewVersion++
+				clearTimeout(this.returnTimer)
+				this.refreshPromise = null
+				this.refreshPending = false
+				this.chat = null
+				this.name = ''
+				this.ok = null
+				this.nameError = this.photoError = this.addingError = null
+				this.savingName = this.savingPhoto = this.adding = this.leaving = false
 				this.load()
 			},
 		},
+		'session.userId'() {
+			this.viewVersion++
+			this.chat = null
+			this.refreshPromise = null
+			if (session.userId) this.load()
+		},
+	},
+	// Run after component is shown
+	mounted() {
+		window.addEventListener('focus', this.onReturn)
+		document.addEventListener('visibilitychange', this.onReturn)
+	},
+	// Run before component is removed
+	beforeUnmount() {
+		this.disposed = true
+		this.viewVersion++
+		clearTimeout(this.returnTimer)
+		window.removeEventListener('focus', this.onReturn)
+		document.removeEventListener('visibilitychange', this.onReturn)
 	},
 	// Functions used by components
 	methods: {
-		async load() {
-			this.loading = true
+		current(id, owner, version) {
+			return !this.disposed && this.chatId === id && session.userId === owner && this.viewVersion === version
+		},
+		onReturn() {
+			if (document.hidden) return
+			clearTimeout(this.returnTimer)
+			// Focus and visibility often fire together; this is a one-shot debounce
+			this.returnTimer = setTimeout(() => {
+				if (!document.hidden) this.load(true)
+			}, 150)
+		},
+		load(silent = false) {
+			if (this.disposed || !session.userId) return Promise.resolve()
+			if (this.busy) {
+				this.refreshPending = true
+				return this.refreshPromise || Promise.resolve()
+			}
+			if (this.refreshPromise) return this.refreshPromise
+			this.refreshPending = false
+			if (!silent) this.loading = true
 			this.errormsg = null
-			try {
-				const chat = await getConversation(this.chatId)
-				if (chat.chatType !== 'group') {
-					// Only a group has a name, a photo and a membership of its own to change
-					this.$router.replace(`/chats/${this.chatId}`)
-					return
-				}
-				rememberAll(chat.members)
-				observeGroupMembers(session.userId, chat.id, chat.members.map((m) => m.id))
-				this.chat = chat
-				this.name = chat.name
-			} catch (e) {
-				this.errormsg = errorMessage(e)
-			} finally {
+			const id = this.chatId
+			const owner = session.userId
+			const version = this.viewVersion
+			this.refreshPromise = this.readGroup(id, owner, version).finally(() => {
+				if (!this.current(id, owner, version)) return
+				this.refreshPromise = null
 				this.loading = false
+			})
+			return this.refreshPromise
+		},
+		async readGroup(id, owner, version) {
+			try {
+				const group = await getGroup(id)
+				if (!this.current(id, owner, version)) return
+				// Compare with the old server value, including edits made during the request
+				const pristine = !this.chat || this.name.trim() === this.chat.name
+				this.chat = group
+				if (pristine) this.name = group.name
+				observeGroupMembers(owner, group.id, group.members)
+				const refreshed = await refreshMany(group.members)
+				if (this.current(id, owner, version) && !refreshed) {
+					this.errormsg = 'Some member profiles could not be refreshed. Return to this window to retry.'
+				}
+			} catch (e) {
+				if (!this.current(id, owner, version)) return
+				if ([403, 404].includes(e.response && e.response.status)) this.chat = null
+				this.errormsg = errorMessage(e)
+			}
+		},
+		// Serialize writes with the current refresh so an earlier read cannot undo a write
+		async mutate(flag, errorField, operation, apply) {
+			if (this.busy || !this.chat) return
+			const id = this.chatId
+			const owner = session.userId
+			const version = this.viewVersion
+			this[flag] = true
+			this[errorField] = null
+			this.ok = null
+			let changed = false
+			try {
+				await this.refreshPromise
+				if (!this.current(id, owner, version) || !this.chat) return
+				const result = await operation(id)
+				if (!this.current(id, owner, version)) return
+				apply(result)
+				changed = true
+			} catch (e) {
+				if (!this.current(id, owner, version)) return
+				if ([403, 404].includes(e.response && e.response.status)) {
+					// A failed add may also mean the selected user disappeared.
+					// Re-read metadata before deciding whether group access was lost
+					this.refreshPending = true
+				}
+				this[errorField] = errorMessage(e)
+			} finally {
+				if (this.current(id, owner, version)) {
+					this[flag] = false
+					if (this.chat && (changed || this.refreshPending)) await this.load(true)
+				}
 			}
 		},
 		async saveName() {
-			if (!this.nameValid || this.savingName) return
-			this.savingName = true
-			this.nameError = null
-			this.ok = null
-			try {
-				// The reply is the group without its members, so only the base is refreshed from it
-				const group = await setGroupName(this.chatId, this.name.trim())
-				this.chat.name = group.name
-				this.chat.photo = group.photo
+			if (!this.nameValid) return
+			const submitted = this.name.trim()
+			await this.mutate('savingName', 'nameError', (id) => setGroupName(id, submitted), (group) => {
+				if (this.name.trim() === submitted) this.name = group.name
+				this.applyGroup(group)
 				this.ok = 'Group name updated.'
-			} catch (e) {
-				this.nameError = errorMessage(e)
-			} finally {
-				this.savingName = false
-			}
+			})
 		},
 		async pickPhoto(event) {
 			const file = event.target.files && event.target.files[0]
 			event.target.value = ''
 			if (!file) return
-
-			this.savingPhoto = true
-			this.photoError = null
-			this.ok = null
-			try {
-				const group = await setGroupPhoto(this.chatId, file)
-				this.chat.name = group.name
-				this.chat.photo = group.photo
+			await this.mutate('savingPhoto', 'photoError', (id) => setGroupPhoto(id, file), (group) => {
+				this.applyGroup(group)
 				this.ok = 'Group photo updated.'
-			} catch (e) {
-				this.photoError = errorMessage(e)
-			} finally {
-				this.savingPhoto = false
-			}
+			})
 		},
 		async add(user) {
-			if (this.adding) return
-			this.adding = true
-			this.addingError = null
-			this.ok = null
-			try {
+			await this.mutate('adding', 'addingError', (id) => addToGroup(id, [user.id]), (group) => {
 				remember(user)
-				// The reply carries the whole member list after the write, so it is taken as it comes
-				const group = await addToGroup(this.chatId, [user.id])
-				this.chat.name = group.name
-				this.chat.photo = group.photo
-				this.chat.members = group.members
-				rememberAll(group.members)
-				observeGroupMembers(session.userId, group.id, group.members.map((m) => m.id))
-				this.ok = `${user.username} was added to the group.`
-			} catch (e) {
-				this.addingError = errorMessage(e)
-			} finally {
-				this.adding = false
-			}
+				this.applyGroup(group)
+				observeGroupMembers(session.userId, group.id, group.members)
+				this.ok = `${profile(user.id).username} was added to the group.`
+			})
+		},
+		applyGroup(group) {
+			const pristine = this.name.trim() === this.chat.name
+			Object.assign(this.chat, group)
+			if (pristine) this.name = group.name
 		},
 		async leave() {
-			const last = this.chat.members.length === 1
-			const question = last
+			if (this.busy || !this.chat) return
+			const question = this.memberIds.length === 1
 				? 'You are the last member: leaving deletes this group and all of its messages. Continue?'
 				: 'Leave this group? You will stop seeing it and will need to be added again.'
 			if (!window.confirm(question)) return
-
-			this.leaving = true
-			this.errormsg = null
-			try {
-				await leaveGroup(this.chatId)
+			await this.mutate('leaving', 'errormsg', leaveGroup, () => {
+				this.chat = null
 				this.$router.push('/')
-			} catch (e) {
-				this.errormsg = errorMessage(e)
-			} finally {
-				this.leaving = false
-			}
+			})
 		},
 	},
 }

@@ -58,12 +58,14 @@ type AppDatabase interface {
 	ForwardMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) (schemas.Message, error)
 	CommentMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId, emoji schemas.Emoji) (schemas.Message, bool, error)
 	UncommentMessage(userId schemas.UserId, chatId schemas.ChatId, messageId schemas.MessageId) error
-	CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.UserId) (schemas.ChatId, bool, error)
-	CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatId, error)
+	CreatePrivateChat(userId1 schemas.UserId, userId2 schemas.UserId) (schemas.ChatWithMembers, bool, error)
+	CreateGroup(creator schemas.UserId, userIds schemas.Members, name schemas.ChatName, photoId schemas.PhotoId) (schemas.ChatWithMembers, error)
 	SetGroupName(userId schemas.UserId, groupId schemas.ChatId, newName schemas.ChatName) (schemas.ChatBase, error)
 	SetGroupPhoto(userId schemas.UserId, groupId schemas.ChatId, newPhotoId schemas.PhotoId) (schemas.ChatBase, schemas.PhotoId, error)
 	AddToGroup(userId schemas.UserId, groupId schemas.ChatId, userIds schemas.Members) (schemas.ChatWithMembers, error)
 	LeaveGroup(userId schemas.UserId, groupId schemas.ChatId) ([]schemas.PhotoId, error)
+	LookupUsers(userIds schemas.Members) (schemas.Users, error)
+	GetGroup(userId schemas.UserId, groupId schemas.ChatId) (schemas.ChatWithMembers, error)
 
 	// My helpers
 	UsersExist(userIds schemas.Members) (bool, error)

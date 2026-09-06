@@ -6,7 +6,7 @@ import UserSearch from '../components/UserSearch.vue'
 // Starting a conversation with any other user of WASAText.
 //
 // createPrivateChat answers 201 for a new chat and 200 for the one that already existed,
-// with the same id either way: the pair is one row,
+// with chat metadata and member IDs. The chat id is the same either way: the pair is one row,
 // so picking somebody already talked to reopens that chat instead of making a second one.
 // Either way the view goes to the chat it names.
 export default {
@@ -27,8 +27,8 @@ export default {
 			this.errormsg = null
 			try {
 				remember(user)
-				const chatId = await createPrivateChat(user.id)
-				this.$router.push(`/chats/${chatId}`)
+				const chat = await createPrivateChat(user.id)
+				this.$router.push(`/chats/${chat.id}`)
 			} catch (e) {
 				this.errormsg = errorMessage(e)
 			} finally {

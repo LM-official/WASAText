@@ -10,7 +10,7 @@ import {
 } from '../services/api.js'
 import { POLL_MS } from '../services/axios.js'
 import { session } from '../services/session.js'
-import { resolveMany, rememberAll, username } from '../services/users.js'
+import { resolveMany, refreshMany, username } from '../services/users.js'
 import { observeGroupMembers } from '../services/membership-notices.js'
 import { dayLabel, sameDay } from '../services/format.js'
 import AuthPhoto from '../components/AuthPhoto.vue'
@@ -95,7 +95,7 @@ export default {
 			// so the first message found for each departed sender is the one the notice follows.
 			const after = new Map()
 			if (this.isGroup) {
-				const members = new Set(this.chat.members.map((m) => m.id))
+				const members = new Set(this.chat.members)
 				const noticed = new Set(
 					this.membershipNotices.filter((item) => item.type === 'left').map((item) => item.userId)
 				)
@@ -181,19 +181,15 @@ export default {
 			if (document.hidden || !this.chatId) return
 			await this.load(true)
 		},
-		// The members arrive with their name and photo, so they are only stored.
-		// Senders and reaction authors are still ids, and all but one kind of them is a member that was just stored:
-		// what is left to ask for is whoever wrote and then left the chat
+		// Refresh displayed profiles separately from membership IDs
 		async resolveNames(chat, membershipNotices = []) {
-			rememberAll(chat.members)
-
 			const ids = []
 			for (const m of chat.messages) {
 				ids.push(m.user)
 				for (const c of m.comments || []) ids.push(c.user)
 			}
 			for (const notice of membershipNotices) ids.push(notice.userId)
-			await resolveMany(ids)
+			await refreshMany(ids)
 		},
 		async load(silent = false) {
 			const asked = this.chatId
@@ -203,7 +199,7 @@ export default {
 				if (this.chatId !== asked) return
 				const membershipNotices =
 					chat.chatType === 'group'
-						? observeGroupMembers(session.userId, chat.id, chat.members.map((m) => m.id))
+						? observeGroupMembers(session.userId, chat.id, chat.members)
 						: []
 				await this.resolveNames(chat, membershipNotices)
 				if (this.chatId !== asked) return

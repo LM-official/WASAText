@@ -14,6 +14,7 @@ package photos
 
 import (
 	"bytes"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,11 @@ import (
 
 // sniffLen is the number of bytes http.DetectContentType reads to tell the content type
 const sniffLen = 512
+
+// Bundle the avatar so a fresh store does not depend on the working directory.
+//
+//go:embed default-avatar.png
+var defaultAvatar []byte
 
 // allowedTypes are the content types a photo may have: anything else is refused on upload
 // The type comes from the bytes, never from the file name or from what the client declares,
@@ -65,6 +71,16 @@ func New(dir string) (Store, error) {
 	// 0o755 is the default permission for directories
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("error creating the photos directory: %w", err)
+	}
+
+	// Seed only a missing avatar; preserve the file in existing photo volumes
+	avatarPath := filepath.Join(dir, string(schemas.DefaultPhotoId))
+	if _, err := os.Stat(avatarPath); os.IsNotExist(err) {
+		if err := os.WriteFile(avatarPath, defaultAvatar, 0o644); err != nil {
+			return nil, fmt.Errorf("creating the default photo: %w", err)
+		}
+	} else if err != nil {
+		return nil, fmt.Errorf("checking the default photo: %w", err)
 	}
 
 	return &storeimpl{

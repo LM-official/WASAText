@@ -1,0 +1,61 @@
+# Use a distinct project name for this stack's containers, network, and volumes.
+name: wasatext
+
+# Run the API and the static frontend as separate services.
+services:
+  # Go API server with SQLite and photo storage.
+  backend:
+    # Build the backend image using the configuration below.
+    build:
+      # Use the repository root as the build context, filtered by .dockerignore.
+      context: .
+      # Read the backend's build instructions from this file.
+      dockerfile: Dockerfile.backend
+      # Select the final runtime stage; its builder stage is built as a dependency.
+      target: runtime
+    # Publish container port 3000 on localhost:3000 for the browser's API calls.
+    ports:
+      - "3000:3000"
+    # The Go configuration loader reads these CFG_ environment variables.
+    environment:
+      # Store SQLite on the database volume instead of the container's writable layer.
+      - CFG_DB_FILENAME=/tmp/wasatext.db
+      # Listen on all container interfaces so the published port can reach the API.
+      - CFG_WEB_API_HOST=0.0.0.0:3000
+      # Use the photo directory mounted from the separate storage volume.
+      - CFG_PHOTOS_DIRECTORY=/app/db/photos
+    # Named volumes preserve data when containers are recreated.
+    volumes:
+      # Persist the SQLite file and its journal files.
+      - db_data:/tmp
+      # Persist uploaded photos and the default avatar.
+      - storage_data:/app/db/photos
+    # Restart after an unexpected stop, and start again when Docker restarts.
+    restart: always
+
+  # nginx serves the production Vue bundle; the browser calls the API directly.
+  frontend:
+    # Build the frontend image using the configuration below.
+    build:
+      # Use the same repository-root context and .dockerignore rules.
+      context: .
+      # Read the frontend's build instructions from this file.
+      dockerfile: Dockerfile.frontend
+      # Select the nginx runtime stage, building its dependencies first.
+      target: runtime
+    # Map host port 5173 to nginx's port 80: open http://localhost:5173.
+    ports:
+      - "5173:80"
+    # Start the backend first; this controls start order, not API readiness.
+    depends_on:
+      - backend
+    # Restart after an unexpected stop, and start again when Docker restarts.
+    restart: always
+
+# Declare the named volumes managed by this Compose project.
+# They survive `docker compose down`; `docker compose down --volumes` deletes them.
+volumes:
+  # Persistent SQLite storage.
+  db_data:
+  # Persistent photo storage; a fresh volume receives the image's default avatar.
+  storage_data:

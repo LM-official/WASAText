@@ -69,10 +69,8 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	}
 
 	// The caller is a member, so the chat has at least one member
-	// The name and the photo travel with the id: the client draws both
-	chat.Members = make(schemas.ChatMembers, 0)
-	memberRows, err := tx.Query(`SELECT u.id, u.username, u.photoId
-								 FROM chat_members AS cm JOIN users AS u ON u.id = cm.userId
+	// Memberships carry IDs; profiles are resolved separately.
+	memberRows, err := tx.Query(`SELECT cm.userId FROM chat_members AS cm
 								 WHERE cm.chatId = ?;`, chatId)
 	// Error reading the members
 	if err != nil {
@@ -81,11 +79,11 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	// Close rows when done even in case of error
 	defer func() { _ = memberRows.Close() }()
 
+	chat.Members = make(schemas.Members, 0)
 	for memberRows.Next() {
-		var member schemas.User
+		var member schemas.UserId
 		// Error reading a row: a shorter list would be a wrong answer, not a partial one
-		// The photo is the stored id here: only the api layer turns it into a URL
-		if err := memberRows.Scan(&member.Id, &member.Username, &member.Photo); err != nil {
+		if err := memberRows.Scan(&member); err != nil {
 			return schemas.ChatDetail{}, fmt.Errorf("cannot read a member of the chat %q: %w", chatId, err)
 		}
 
@@ -103,7 +101,6 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	// The query walks the (chatId, date) index backwards and stops at the page,
 	// so a chat of any length is read in the same bounded time,
 	// and rowid breaks the tie by insertion order between two messages that share an instant
-	chat.Messages = make(schemas.Messages, 0)
 	messageRows, err := tx.Query(`SELECT m.id, m.userId, m.date, m.text, m.photoId, m.replyTo, m.forwarded,
 										 -- A message is read (rm) once no member of the chat is left behind it,
 										 -- which is a fact about the members and not about the caller:
@@ -124,7 +121,7 @@ func (db *appdbimpl) GetConversation(userId schemas.UserId, chatId schemas.ChatI
 	// Where each message sits in the list built here,
 	// so that the comments read right after reach the message they belong to without walking the list once per comment
 	index := make(map[schemas.MessageId]int)
-
+	chat.Messages = make(schemas.Messages, 0)
 	for messageRows.Next() {
 		// A message carries text, photo, or both, so one of the two columns may be NULL but never both
 		var msgDate string

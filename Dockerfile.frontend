@@ -1,48 +1,35 @@
-# Dockerfile.frontend — the WASAText web interface.
-#
-# Two stages: the first one builds the Vue sources into plain HTML, CSS and JavaScript,
-# the second one is a web server holding those files.
-# Node is only needed to build, so it stays behind.
-# Build from the repository root because COPY paths are relative to the build context:
-# docker build -f Dockerfile.frontend -t wasatext-frontend .
+# Build the Vue application with Node 20; the builder is not the final image.
+FROM node:20-alpine AS builder
 
-# Build stage
-# This named stage is temporary and is not part of the image users run.
-FROM node:20 AS builder
-
-# WORKDIR creates /app if needed and makes following relative paths start there.
+# Create /app and use it for subsequent build commands and relative COPY paths.
 WORKDIR /app
 
-# Only the interface is needed here, not the Go sources
-# .dockerignore removes local node_modules and dist so they are produced cleanly in this stage.
-COPY webui webui
+# Enable Yarn through Corepack and activate the version pinned by the project.
+RUN corepack enable \
+    && corepack prepare yarn@4.5.0 --activate
 
-# WORKDIR creates /app/webui if needed and makes following relative paths start there.
-WORKDIR /app/webui
+# Copy dependency manifests before application sources so source edits can reuse the install layer.
+COPY webui/package.json webui/yarn.lock webui/.yarnrc.yml ./
+# Include the Yarn release referenced by .yarnrc.yml; .dockerignore excludes local cache/state.
+COPY webui/.yarn/ .yarn/
+# Download dependencies and populate the cache without allowing yarn.lock to change.
+RUN yarn install --immutable
 
-# The project pins Yarn 4 through the "packageManager" field of package.json,
-# and carries both the Yarn release and the package cache inside webui/.yarn,
-# so this is the exact version the project was developed with,
-# and the install reads the packages from the repository instead of the network
-RUN corepack enable
-
-# --immutable fails instead of rewriting yarn.lock, which is what makes this build reproducible:
-# the packages installed here are the ones the lockfile names
-RUN yarn install --immutable --immutable-cache
-
-# vite build --mode production, writing the site into webui/dist
+# Add the frontend sources; local node_modules and dist are excluded by .dockerignore.
+COPY webui/ .
+# Build /app/dist; the script's immutable-cache check uses the cache populated above.
 RUN yarn run build-prod
 
-# Final stage
-FROM nginx:stable
+# Serve the built files with nginx; Node and build dependencies stay in the builder stage.
+FROM nginx:stable-alpine AS runtime
 
-# Copy the built site where nginx serves from. The router uses hash URLs ('#/chats/...'),
-# so the server never sees a path of its own and the default nginx configuration is enough
-COPY --from=builder /app/webui/dist /usr/share/nginx/html
+# Remove the default nginx website before installing this application's files.
+RUN rm -rf /usr/share/nginx/html/*
+# Copy only the production bundle into nginx's document root.
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-# nginx serves on 80. The API is a separate container reached by the browser at http://localhost:3000,
-# the address compiled into the bundle by vite.config.js
-# EXPOSE documents the port; publish it with, for example, `docker run -p 8080:80 ...`.
+# Document nginx's listening port; Compose publishes it on host port 5173.
 EXPOSE 80
 
-# No CMD is needed here: the nginx base image already starts nginx in the foreground.
+# Keep nginx in the foreground so it remains the container's main process.
+CMD ["nginx", "-g", "daemon off;"]

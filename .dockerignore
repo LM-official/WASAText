@@ -13,13 +13,15 @@
 **/.DS_Store
 **/.vscode
 webui/dist
+webui/.yarn/cache
+webui/.yarn/install-state.gz
+webui/.bash_history
+webapi
 
-# State written by a local run, not sources: the image creates its own empty /app/db.
-# The default photo is the exception: schemas.DefaultPhotoId names it
-# for every user and every group that has no photo of its own,
-# and nothing in the code ever writes it,
-# so the file itself has to reach the image
-db/
+# Ship only the default photo, never a local database or uploaded photos.
+db/*
+!db/photos
+db/photos/*
 !db/photos/00000000-0000-4000-8000-000000000000
 
 # Local validators

@@ -93,12 +93,12 @@ export default {
 			this.creating = true
 			this.errormsg = null
 			try {
-				const groupId = await createGroup({
+				const group = await createGroup({
 					name: this.name.trim(),
 					members: this.picked.map((u) => u.id),
 					file: this.file,
 				})
-				this.$router.push(`/chats/${groupId}`)
+				this.$router.push(`/chats/${group.id}`)
 			} catch (e) {
 				this.errormsg = errorMessage(e)
 			} finally {

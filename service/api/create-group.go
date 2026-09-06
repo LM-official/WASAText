@@ -87,7 +87,7 @@ func (rt *_router) createGroup(w http.ResponseWriter, r *http.Request, ps httpro
 	}
 
 	// Query
-	id, err := rt.db.CreateGroup(userId, req.Members, req.Name, photoId)
+	chat, err := rt.db.CreateGroup(userId, req.Members, req.Name, photoId)
 	if err != nil {
 		// The new photo is on disk but no row points at it: drop it instead of leaking a file
 		// Only an upload of this request is dropped: the default is shared by every user and every group that never uploaded one,
@@ -103,7 +103,7 @@ func (rt *_router) createGroup(w http.ResponseWriter, r *http.Request, ps httpro
 	}
 
 	// Response
-	writeJSON(w, ctx, http.StatusCreated, struct {
-		Id schemas.ChatId `json:"id"`
-	}{Id: id})
+	// The base is embedded, so the photo id it carries is turned into a URL through it
+	chat.ChatBase = withChatPhotoURL(chat.ChatBase)
+	writeJSON(w, ctx, http.StatusCreated, chat)
 }

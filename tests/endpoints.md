@@ -149,7 +149,7 @@ The cap. The 99 `fill` users of the seed all match the prefix `fill`, and the qu
 ---
 
 ## 4. `getUser` — `GET /users/{userId}`
-The read that goes the other way. A message and a comment hand the client the id of who wrote them and not the user, while the interface has to draw a username and a photo. The `members` of a chat carry theirs (§11, §14), so what is left for this endpoint is whoever appears in a chat without belonging to it: a sender who wrote and then left. §3 cannot answer that either — it searches by username prefix, and the client holding an id has no username to search with.
+The read that goes the other way. A message and a comment hand the client the id of who wrote them and not the user, while the interface has to draw a username and a photo. Chat members also travel as IDs (§11, §14). The frontend uses batch lookup for displayed profiles, including senders who have left. §3 cannot answer that either — it searches by username prefix, and the client holding an id has no username to search with.
 
 ```shell
 curl -i localhost:3000/users/$A -H "Authorization: Bearer $A"
@@ -233,9 +233,9 @@ curl -i -X POST localhost:3000/private_chats -H "Authorization: Bearer $A" \
 
 | body / caller | reply |
 |---|---|
-| A asks for B, first time | `201 {"id":"<chatId>"}` |
-| A asks for B again | `200` and the same chatId |
-| B asks for A | `200` and the same chatId — `pairKey` sorts the two ids, so the pair is one row either way |
+| A asks for B, first time | `201` with `id`, `chatType: "private"`, B's current `name` and `photo` URL, and both IDs in `members` |
+| A asks for B again | `200` with the same chatId and B's current profile; no messages or read-receipt changes |
+| B asks for A | `200` with the same chatId and A's current name and photo — `pairKey` sorts the two ids, so the pair is one row either way |
 | A asks for A | `400 {"code":400,"message":"cannot open a private chat with yourself"}` |
 | a valid UUID owned by nobody | `404 {"code":404,"message":"the other user does not exist"}` |
 | `{"id":"not-a-uuid"}`, `{}`, malformed JSON | `400 invalid request body` |
@@ -254,7 +254,7 @@ curl -i -X POST localhost:3000/groups -H "Authorization: Bearer $A" \
 
 | case | reply |
 |---|---|
-| valid name + members + photo | `201 {"id":"<chatId>"}`, and `chat_members` holds `$A` and `$B`: the creator is added by the server |
+| valid name + members + photo | `201` with `id`, `chatType: "group"`, the requested `name`, the uploaded `photo` URL, and `members` containing `$A` and `$B`: the creator is added by the server |
 | the same request again | `201` and a different id — the same people may share many groups (`pairKey` is NULL for a group) |
 | `members` containing the caller | `400 {"code":400,"message":"the creator is already a member of the group"}` |
 | `members` with a valid UUID owned by nobody | `404 {"code":404,"message":"one or more of the members does not exist"}` |
@@ -356,7 +356,7 @@ curl -i -X POST localhost:3000/groups/$G/members \
 
 | case | reply |
 |---|---|
-| a member adds one or more users | `200 {"id":"$G","chatType":"group","name":"...","photo":"/photos/<uuid>","members":[{"id":"..","username":"..","photo":"/photos/<uuid>"},..]}` |
+| a member adds one or more users | `200 {"id":"$G","chatType":"group","name":"...","photo":"/photos/<uuid>","members":["<userId>",..]}` |
 | the other member adds | `200` — every member may add, a group has no owner |
 | a user already inside | `200`, and the list holds it once — `INSERT OR IGNORE` drops the repeated tuple |
 | the caller itself | `200`, unchanged — the caller is a member by definition |
@@ -483,7 +483,7 @@ curl -s localhost:3000/me/chats -H "Authorization: Bearer $A" | grep -o '"chatTy
 # -> private (its snippet reads SECOND in that millisecond), group, then G2 which has no message at all
 ```
 
-Nothing is written by this endpoint. It is the only read of a chat, so a call must leave `chats`, `chat_members`, `messages` and `db/photos` exactly as they were.
+Nothing is written by this endpoint. Like the group metadata endpoint, a call must leave `chats`, `chat_members`, `messages` and `db/photos` exactly as they were.
 
 ---
 
@@ -518,7 +518,7 @@ The reply is a `GroupDetail` or a `PrivateChatDetail`, the only endpoint that an
 - No `snippet`, and no truncation: the list holds the last message itself, so the 120-character message of §13 reads 50 there and 120 here.
 - One page of `ChatMessagesPageSize` (500), a `LIMIT` on the query and not a cut made afterwards, so a chat of any length is read in the same bounded time. Pagination is still missing (§23).
 - Ordering and state are the ones of §13, same rules written once per read: `ORDER BY date DESC, rowid DESC`, and `read` once no member of the chat is left behind the message.
-- Every member carries its `username` and its `photo`, not just its id, so the whole member list and every sender still in the chat are drawn from this one answer. `withMemberPhotoURLs` maps the stored ids the same way the chat and the messages are mapped; forgetting it would serve a raw id in place of a URL. A sender who has left is not among them and is still read one id at a time (§4).
+- Members are user IDs. Current names and photos are resolved through `POST /users_lookup`; the reactive directory also supplies message, reply and reaction authors.
 - A message photo is a URL, and a message without one keeps the field absent: `withMessagePhotoURL` returns early on the empty field, or `"/photos/"` — the prefix alone — would go out on every text-only message.
 - The comments of the whole page are one query, bucketed by `messageId`, so a chat of 500 messages is one query and not 500. A reaction on a message older than the page is never read.
 - 403 vs 404 in one read, as in §11: membership is an `EXISTS` column and not a condition of the `WHERE`, so the query finds the row whether or not the caller belongs to it — that is what tells "no chat owns this id" from "not yours". The row is read by the handler and never sent: a non-member is answered with the `403` body alone.

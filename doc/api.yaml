@@ -6,7 +6,7 @@ info:
 
 servers:                                              # Base URL where the API is
   - url: 'http://localhost:3000'
-    description: 'Local Development Environment (Docker/Go)'
+    description: 'Local Development Environment'
   - url: 'https://api.wasatext.com'
     description: 'Production Server'
 
@@ -174,10 +174,10 @@ components:                                           # Reusable components
         - type: object                                # Override type to object
           properties:
             members:
-              description: 'Members of the chat, each with the name and the photo to draw it with'
+              description: 'User IDs of the members; resolve current profiles through user lookup'
               type: array
               items:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/UserId'
               minItems: 1                             # The wider of the two kinds, narrowed by the kind axis below
               maxItems: 100
               uniqueItems: true                       # One row per membership: a member cannot be held twice
@@ -229,7 +229,7 @@ components:                                           # Reusable components
           description: 'Members of the group'         # The shape this is combined with already carries
           type: array
           items:
-            $ref: '#/components/schemas/User'
+            $ref: '#/components/schemas/UserId'
           minItems: 1                                 # A group answered with its members holds at least the caller
           maxItems: 100
 
@@ -255,7 +255,7 @@ components:                                           # Reusable components
           description: 'The two members of the private chat'  # The shape this is combined with already carries
           type: array
           items:
-            $ref: '#/components/schemas/User'
+            $ref: '#/components/schemas/UserId'
           minItems: 2                                 # A private chat is always the two of its pair
           maxItems: 2
 
@@ -271,7 +271,7 @@ components:                                           # Reusable components
         - $ref: '#/components/schemas/ChatSummary'
         - $ref: '#/components/schemas/GroupKind'
 
-    GroupWithMembers:                                 # Wire shape: addToGroup
+    GroupWithMembers:                                 # Wire shape: createGroup, getGroup and addToGroup
       description: 'A group chat with its members, without the messages'
       allOf:
         - $ref: '#/components/schemas/ChatWithMembers'
@@ -287,6 +287,12 @@ components:                                           # Reusable components
       description: 'A private chat as the chats list of the homepage draws it, with the snippet'
       allOf:
         - $ref: '#/components/schemas/ChatSummary'
+        - $ref: '#/components/schemas/PrivateChatKind'
+
+    PrivateChatWithMembers:                           # Wire shape: createPrivateChat
+      description: 'A private chat with its two members, without the messages'
+      allOf:
+        - $ref: '#/components/schemas/ChatWithMembers'
         - $ref: '#/components/schemas/PrivateChatKind'
 
     PrivateChatDetail:                                # Wire shape: getConversation
@@ -481,6 +487,35 @@ components:                                           # Reusable components
         - $ref: '#/components/schemas/GroupDetail'
         - $ref: '#/components/schemas/PrivateChatDetail'
 
+    LookupUsersRequest:
+      description: 'Resolve a batch of user IDs into current profiles'
+      type: object
+      properties:
+        ids:
+          description: 'Unique user IDs to look up'
+          type: array
+          items:
+            $ref: '#/components/schemas/UserId'
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+      required: [ids]
+
+    UserLookupResponse:
+      description: 'Current profiles for the requested IDs; nonexistent users are omitted'
+      type: object
+      properties:
+        users:
+          description: 'Matching users, ordered by ID; may be empty'
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+          minItems: 0
+          maxItems: 100
+          uniqueItems: true
+      required: [users]
+      additionalProperties: false
+
     ForwardMessageRequest:
       description: 'Object containing the id of the message to forward'
       type: object
@@ -506,15 +541,6 @@ components:                                           # Reusable components
         id:
           $ref: '#/components/schemas/UserId'
       required: [id]
-
-    ChatIdResponse:
-      description: 'Object containing the chat id'
-      type: object
-      properties:
-        id:
-          $ref: '#/components/schemas/ChatId'
-      required: [id]
-      additionalProperties: false                     # No other properties allowed
 
     CreateGroupData:
       description: 'Group data in JSON format'
@@ -1009,12 +1035,8 @@ paths:                                                # Rest endpoints
                 name: 'Bob'
                 photo: '/photos/d41f8a72-3b6c-4e19-8a52-0c7f5b21e934'
                 members:
-                  - id: 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
-                    username: 'Alice'
-                    photo: '/photos/00000000-0000-4000-8000-000000000000'
-                  - id: 'c23a4180-65aa-42ec-a945-5fd21dec0538'
-                    username: 'Bob'
-                    photo: '/photos/d41f8a72-3b6c-4e19-8a52-0c7f5b21e934'
+                  - 'cf6a4180-65aa-42ec-a945-5fd21dec0538'
+                  - 'c23a4180-65aa-42ec-a945-5fd21dec0538'
                 # Newest first, and no snippet: the last message is the first element of this list
                 messages:
                   - id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
@@ -1289,7 +1311,8 @@ paths:                                                # Rest endpoints
         Creates the private chat between the authenticated user and the user of the body,
         or returns the one the pair already owns.
         The two members are one pair whichever of them asks: the same chat is returned both ways.
-        The reply carries the chat id alone.
+        Both replies carry the chat metadata and the two member IDs, without messages.
+        The name and photo belong to the other member, relative to the authenticated user.
       summary: 'Create a new private chat or get the existing one'
       tags: ['PrivateChat']
       requestBody:
@@ -1305,17 +1328,29 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatIdResponse'
+                $ref: '#/components/schemas/PrivateChatWithMembers'
               example:
                 id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
+                chatType: 'private'
+                name: 'Alice'
+                photo: '/photos/00000000-0000-4000-8000-000000000000'
+                members:
+                  - '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                  - '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
         '201':
           description: 'Private chat created successfully'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatIdResponse'
+                $ref: '#/components/schemas/PrivateChatWithMembers'
               example:
                 id: 'c56a4180-65aa-42ec-a945-5fd21dec0538'
+                chatType: 'private'
+                name: 'Alice'
+                photo: '/photos/00000000-0000-4000-8000-000000000000'
+                members:
+                  - '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                  - '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
         '400':                                        # E.g. you cannot create a private chat with yourself
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1336,7 +1371,7 @@ paths:                                                # Rest endpoints
         The photo is optional: a group created without one starts from a default photo,
         and keeps it until setGroupPhoto replaces it.
         The default is one shared id and never a file the group owns, so creating a group without a photo writes nothing.
-        The reply carries the chat id alone.
+        The reply carries the created group metadata and member IDs, including the creator.
       summary: 'Create a new group chat'
       tags: ['Group']
       requestBody:
@@ -1362,9 +1397,15 @@ paths:                                                # Rest endpoints
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatIdResponse'
+                $ref: '#/components/schemas/GroupWithMembers'
               example:
                 id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
+                chatType: 'group'
+                name: 'Computer Science Study Group'
+                photo: '/photos/00000000-0000-4000-8000-000000000000'
+                members:
+                  - '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                  - '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1501,15 +1542,9 @@ paths:                                                # Rest endpoints
                 name: 'Computer Science Study Group'
                 photo: '/photos/d41f8a72-3b6c-4e19-8a52-0c7f5b21e934'
                 members:
-                  - id: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                    username: 'Alice'
-                    photo: '/photos/00000000-0000-4000-8000-000000000000'
-                  - id: '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                    username: 'Bob'
-                    photo: '/photos/d41f8a72-3b6c-4e19-8a52-0c7f5b21e934'
-                  - id: '80b2c3d4-e5f6-42ec-a945-5fd21dec0538'
-                    username: 'Carl'
-                    photo: '/photos/00000000-0000-4000-8000-000000000000'
+                  - '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                  - '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                  - '80b2c3d4-e5f6-42ec-a945-5fd21dec0538'
         '400':                                        # Malformed body, or the additions do not fit the group
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1549,6 +1584,81 @@ paths:                                                # Rest endpoints
         '403':                                        # Not a member of the group
           $ref: '#/components/responses/Forbidden'
         '404':                                        # No group owns that id, the last member having left it included
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /users_lookup:
+    post:
+      operationId: 'lookupUsers'
+      summary: 'Look up current profiles by user IDs'
+      description: |
+        Resolves 1 to 100 unique user IDs in one read-only request.
+        Nonexistent users are omitted; an entirely missing batch returns an empty list with 200.
+        Any authenticated user may look up profiles, as with username search.
+      tags: ['User']
+      requestBody:
+        required: true
+        description: 'Unique IDs of the requested users'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LookupUsersRequest'
+            example:
+              ids:
+                - '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+      responses:
+        '200':
+          description: 'Current profiles retrieved successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserLookupResponse'
+              example:
+                users:
+                  - id: '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                    username: 'Alice'
+                    photo: '/photos/00000000-0000-4000-8000-000000000000'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /groups/{group_id}:
+    get:
+      operationId: 'getGroup'
+      summary: 'Get group metadata and member IDs'
+      description: |
+        Returns the current group metadata and member IDs without messages.
+        This read never changes message read receipts. Only members may read the group.
+        A missing group or a private chat ID returns 404.
+      tags: ['Group']
+      parameters:
+        - $ref: '#/components/parameters/ParamGroupId'
+      responses:
+        '200':
+          description: 'Group metadata retrieved successfully'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupWithMembers'
+              example:
+                id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
+                chatType: 'group'
+                name: 'Computer Science Study Group'
+                photo: '/photos/00000000-0000-4000-8000-000000000000'
+                members:
+                  - '90b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+                  - '70b2c3d4-e5f6-42ec-a945-5fd21dec0538'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
           $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalServerError'

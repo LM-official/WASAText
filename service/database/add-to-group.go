@@ -33,8 +33,7 @@ func (db *appdbimpl) AddToGroup(userId schemas.UserId, groupId schemas.ChatId, u
 	err = tx.QueryRow(`SELECT c.id, c.name, c.photoId,
 					   EXISTS (SELECT 1 FROM chat_members WHERE chatId = c.id AND userId = ?)
 					   FROM chats c WHERE c.id = ? AND c.chatType = ?;`,
-		userId, groupId, schemas.ChatTypeGroup,
-	).Scan(&chat.Id, &chat.Name, &chat.Photo, &isMember)
+		userId, groupId, schemas.ChatTypeGroup).Scan(&chat.Id, &chat.Name, &chat.Photo, &isMember)
 	// No group owns that id: it may not exist at all, or be a private chat
 	if errors.Is(err, sql.ErrNoRows) {
 		return schemas.ChatWithMembers{}, ErrChatNotFound
@@ -80,11 +79,7 @@ func (db *appdbimpl) AddToGroup(userId schemas.UserId, groupId schemas.ChatId, u
 	// so how long it gets is what the table says and not what the request asked:
 	// no capacity is guessed here, append grows it
 	// Empty is never the answer: the caller is a member, so it is one of these rows
-	chat.Members = make(schemas.ChatMembers, 0)
-	// The name and the photo travel with the id, as in GetConversation:
-	// the caller redraws the member list from this answer and never asks who the people it just added are
-	rows, err := tx.Query(`SELECT u.id, u.username, u.photoId
-						   FROM chat_members AS cm JOIN users AS u ON u.id = cm.userId
+	rows, err := tx.Query(`SELECT cm.userId FROM chat_members AS cm
 						   WHERE cm.chatId = ?;`, groupId)
 	// Error reading the members
 	if err != nil {
@@ -93,11 +88,11 @@ func (db *appdbimpl) AddToGroup(userId schemas.UserId, groupId schemas.ChatId, u
 	// Close rows when done even in case of error
 	defer func() { _ = rows.Close() }()
 
+	chat.Members = make(schemas.Members, 0)
 	for rows.Next() {
-		var member schemas.User
+		var member schemas.UserId
 		// Error reading a row: a shorter list would be a wrong answer, not a partial one
-		// The photo is the stored id here: only the api layer turns it into a URL
-		if err := rows.Scan(&member.Id, &member.Username, &member.Photo); err != nil {
+		if err := rows.Scan(&member); err != nil {
 			return schemas.ChatWithMembers{}, fmt.Errorf("cannot read a group member: %w", err)
 		}
 
