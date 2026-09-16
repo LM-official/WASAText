@@ -9,11 +9,15 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the repository sources and vendor/ after .dockerignore filters out local data and artifacts.
+# Download Go modules in a reusable layer before copying application sources.
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the repository sources after .dockerignore filters out local data and artifacts.
 COPY . .
 
-# Enable CGO for SQLite and use vendored dependencies; write the executable to /app/webapi.
-RUN CGO_ENABLED=1 go build -mod=vendor -o /app/webapi ./cmd/webapi
+# Enable CGO for SQLite and use downloaded modules without changing go.mod.
+RUN CGO_ENABLED=1 go build -mod=readonly -o /app/webapi ./cmd/webapi
 
 # Use a smaller runtime with the same Debian release for compatibility with the CGO binary.
 FROM debian:bookworm-slim AS runtime

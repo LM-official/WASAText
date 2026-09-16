@@ -4,11 +4,12 @@
 # Excluding generated files and local state makes builds smaller
 # and prevents COPY from including development-only data in an intermediate stage.
 #
-# Dockerfile.backend copies the whole repository to reach the Go sources and vendor/,
+# Dockerfile.backend copies the whole repository to reach the Go sources,
 # so without this file the database of the development machine,
 # the photos it holds and the local node_modules would all be copied into the build
 # and end up inside the image.
 .git
+/vendor/
 **/.gitignore
 **/.DS_Store
 **/.vscode

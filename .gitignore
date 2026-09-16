@@ -22,5 +22,7 @@ db/photos/*
 !db/photos/00000000-0000-4000-8000-000000000000
 
 # Cache
+/vendor/
 webui/.bash_history
+webui/.yarn/cache
 node_modules/

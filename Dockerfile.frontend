@@ -10,8 +10,6 @@ RUN corepack enable \
 
 # Copy dependency manifests before application sources so source edits can reuse the install layer.
 COPY webui/package.json webui/yarn.lock webui/.yarnrc.yml ./
-# Include the Yarn release referenced by .yarnrc.yml; .dockerignore excludes local cache/state.
-COPY webui/.yarn/ .yarn/
 # Download dependencies and populate the cache without allowing yarn.lock to change.
 RUN yarn install --immutable
 

@@ -16,7 +16,7 @@
 
 ## 🎯 About
 
-WasaText is a **full-stack messaging application** built from the **Fantastic Coffee (decaffeinated)** template, for keeping in touch through private and group conversations.
+WasaText is a **full-stack messaging application** built from the **[Fantastic Coffee (decaffeinated)](https://github.com/sapienzaapps/fantastic-coffee-decaffeinated)** template, for keeping in touch through private and group conversations.
 
 > 🔑 **Project scope:** security is not a goal of this project, so logging in requires only a username, with no password. A new username creates an account; the returned user UUID serves as the bearer token for subsequent requests.
 
@@ -76,10 +76,10 @@ WasaText/
 │   │   ├── router/                  # Hash routes and session guards
 │   │   └── assets/                  # Application styling
 │   ├── public/                      # Static frontend resources
-│   ├── .yarn/                       # Pinned Yarn release and dependency cache
+│   ├── package.json / yarn.lock     # Yarn version and frontend dependencies
 │   ├── vite.config.js               # Vite setup and API base URL
 │   └── static-resources.go          # Optional Go embedding of the built frontend
-├── vendor/                          # Vendored Go dependencies
+├── go.mod / go.sum                  # Go dependency versions and checksums
 ├── db/                              # Optional local data; committed default avatar
 ├── tests/                           # Endpoint checks, fixtures, lifecycle scenarios
 ├── Dockerfile.backend               # Go builder → Debian runtime
@@ -304,14 +304,16 @@ In another terminal, run Vue in Node 20 to match the project's Linux dependency 
 
 ```bash
 docker run --rm -it -p 5173:5173 -v "$PWD:/src" -w /src/webui \
-  node:20 bash -lc 'corepack enable && yarn run dev --host 0.0.0.0'
+  node:20 bash -lc 'corepack enable && yarn install --immutable && yarn run dev --host 0.0.0.0'
 ```
 
 Open `http://localhost:5173`. Stop the corresponding Compose services first to free ports 3000 and 5173.
 
 From `webui/` in the Node/Yarn environment, use `yarn run build-prod` for a production bundle and `yarn run preview` to serve it. For an embedded app, run `yarn run build-embed`, then build Go from the root with `go build -tags webui -o webapi ./cmd/webapi/`; running `./webapi` serves the UI at `/dashboard/`.
 
-Keep `vendor/` and the pinned Yarn release in `webui/.yarn/releases/`: builds rely on them. Frontend scripts download missing cached dependencies automatically while keeping `yarn.lock` unchanged.
+Go dependencies are downloaded automatically from `go.mod` and `go.sum`; keep both files committed. The backend Docker build downloads modules in a separate layer, reused until either file changes. Local Go builds use the Go module cache outside the repository; `vendor/` is not required and is ignored.
+
+Use Corepack to download and run the Yarn version pinned by `packageManager` in `webui/package.json`; the repository does not bundle Yarn. The Docker image sets up Corepack automatically. For local development, install Corepack if your Node installation does not include it, run `corepack enable`, then run `yarn install --immutable` from `webui/` once before using the frontend scripts. Keep `yarn.lock` committed; npm's `package-lock.json` is not used. Frontend scripts can download missing cached dependencies while keeping `yarn.lock` unchanged.
 
 ---
 

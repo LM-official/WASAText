@@ -11,9 +11,8 @@ We strongly encourage every WASA student to verify that their code correctly per
 - Set Go toolchain version to 1.25.1:
   1. On Windows: `set GOTOOLCHAIN=go1.25.1`
   2. On Mac and Linux: `export GOTOOLCHAIN=go1.25.1`
-- Clean go.mod and vendor dependencies locally:
-  1. `go mod tidy`
-  2. `go mod vendor`
+- Download the Go dependencies pinned by this repository:
+  1. `go mod download`
 - Finally, try to run the backend and ensure it works:
   1. `go run ./cmd/webapi`
 
@@ -22,9 +21,9 @@ We strongly encourage every WASA student to verify that their code correctly per
 - Enter the Node.js container:
   1. `./open-node.sh`
 - Install deps, build, and run:
-  1. `yarn install`
-  2. `yarn run vite build --mode production`
-  3. `yarn run vite preview --host 0.0.0.0 --port 4173 --strictPort`
+  1. `corepack yarn install --immutable`
+  2. `corepack yarn run vite build --mode production`
+  3. `corepack yarn run vite preview --host 0.0.0.0 --port 4173 --strictPort`
 
 ### b) Multiple users
 

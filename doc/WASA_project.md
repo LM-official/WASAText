@@ -197,6 +197,8 @@ All packages should be here, as sub-directories. Nesting is possible.
 E.g., `services/globaltime/` is the `globaltime` package.
 
 ## `vendor/`
+This section describes the original template. WasaText now downloads Go modules from `go.mod` and `go.sum` automatically; its builds do not require `vendor/`.
+
 It contains the source for all external packages ("dependencies").
 You should update it when you add/update/remove dependencies:
 ```sh
