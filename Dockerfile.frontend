@@ -17,7 +17,7 @@ RUN yarn install --immutable
 
 # Add the frontend sources; local node_modules and dist are excluded by .dockerignore.
 COPY webui/ .
-# Build /app/dist; the script's immutable-cache check uses the cache populated above.
+# Build /app/dist; the script reuses the dependencies installed above.
 RUN yarn run build-prod
 
 # Serve the built files with nginx; Node and build dependencies stay in the builder stage.

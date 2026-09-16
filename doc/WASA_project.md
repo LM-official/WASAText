@@ -7,6 +7,8 @@
 3. Tools:
    1. YAML: <https://editor.swagger.io>
    2. GO: <https://go.dev/play>
+   3. Validators: <https://gist.github.com/ENDERZOMBI102/7a53044dfc86fc82e9f16923d950c000>
+4. A solution: <https://github.com/scritti-informatica/WASAText>
 
 ---
 
